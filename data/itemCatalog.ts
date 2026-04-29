@@ -1,0 +1,30 @@
+export {
+  ITEM_CATEGORIES,
+  catalogItemMatchesFilters,
+  compactSearchTerm,
+  findCatalogItemByQuery,
+  findCatalogItemByUniqueName,
+  findCatalogItemsByQuery,
+  getDisplayItemName,
+  getDisplayItemTierLabel,
+  getCatalogSearchText,
+  getItemBaseDisplayName,
+  getItemFamilyId,
+  itemCatalog,
+  normalizeSearchTerm,
+  buildItemUniqueName,
+  resolveItemVariation,
+  searchItems,
+} from '@/lib/itemSearch';
+
+export const MONITORED_ITEM_IDS = [
+  'T4_BAG',
+  'T5_BAG',
+  'T6_BAG',
+  'T5_MAIN_DAGGERPAIR',
+  'T6_MAIN_DAGGERPAIR',
+  'T6_MAIN_RAPIER_MORGANA',
+  'T6_POTION_HEAL',
+  'T7_2H_BOW',
+  'T8_ARMOR_CLOTH_SET1',
+] as const;

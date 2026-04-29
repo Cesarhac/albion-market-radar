@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #facc15;
+  --color-brand-secondary: #eab308;
+  --color-brand-accent: #fbbf24;
+
+  --color-bg-dark: #09090b;
+  --color-bg-card: #18181b;
+  --color-bg-lighter: #27272a;
+
+  --color-status-success: #22c55e;
+  --color-status-danger: #ef4444;
+  --color-status-warning: #f59e0b;
+  --color-status-info: #38bdf8;
+
+  --color-border-subtle: #3f3f46;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(250, 204, 21, 0.07), transparent 26rem),
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.05), transparent 24rem),
+    var(--color-bg-dark);
+  color: #f4f4f5;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+select {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(250, 204, 21, 0.3);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 999px;
+  border: 2px solid #09090b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+@layer components {
+  .field-label {
+    @apply text-xs font-bold uppercase tracking-wider text-zinc-500;
+  }
+
+  .field-control {
+    @apply h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none placeholder:text-zinc-600 focus:border-brand-primary;
+  }
+
+  .field-textarea {
+    @apply w-full resize-none rounded-lg border border-border-subtle bg-zinc-950 px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-brand-primary;
+  }
+
+  .primary-button {
+    @apply inline-flex h-11 items-center gap-2 rounded-lg bg-brand-primary px-4 text-sm font-black text-bg-dark transition-colors hover:bg-brand-secondary;
+  }
+
+  .secondary-button {
+    @apply inline-flex h-10 items-center gap-2 rounded-lg border border-border-subtle bg-zinc-900 px-3 text-sm font-bold text-white transition-colors hover:border-brand-primary/40 disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .danger-button {
+    @apply inline-flex h-10 items-center gap-2 rounded-lg border border-status-danger/30 bg-status-danger/10 px-3 text-sm font-bold text-status-danger transition-colors hover:bg-status-danger/20;
+  }
+
+  .icon-button {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border-subtle bg-zinc-950 text-zinc-400 transition-colors hover:text-white;
+  }
+}
