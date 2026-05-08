@@ -62,11 +62,24 @@ npm run dev
 
 Abra `http://localhost:3000`, cadastre uma conta, faça login e teste `/search`, `/pro`, `/opportunities`, `/alerts`, `/weapons`, `/trader`, `/regear` e `/chat`.
 
-## Deploy Na Vercel
+## Deploy Na Netlify
+
+O projeto está preparado para deploy na Netlify Free com Next.js App Router. A Netlify usa automaticamente o adapter OpenNext para Next.js moderno, então não fixe `@netlify/plugin-nextjs` no `package.json` nem adicione `[[plugins]]` no `netlify.toml`, salvo se a Netlify pedir isso em um caso de suporte específico.
 
 1. Envie o repositório para o GitHub.
-2. Importe o projeto na Vercel.
-3. Configure as variáveis:
+2. Importe o projeto na Netlify.
+3. Confira que o arquivo `netlify.toml` está na raiz com:
+
+```toml
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+```
+
+4. Configure as variáveis em **Site configuration > Environment variables**:
 
 ```txt
 NEXT_PUBLIC_SUPABASE_URL
@@ -82,14 +95,22 @@ NEXT_PUBLIC_APP_URL
 Em produção:
 
 ```txt
-NEXT_PUBLIC_APP_URL=https://sua-url-da-vercel.vercel.app
+NEXT_PUBLIC_APP_URL=https://seu-site.netlify.app
 ```
 
-4. Adicione a URL da Vercel no Supabase Auth.
-5. No Stripe Dashboard, crie webhook de produção:
+5. No Supabase Auth, adicione a URL da Netlify em **Site URL** e nas URLs permitidas de redirecionamento. Exemplos:
 
 ```txt
-https://sua-url-da-vercel.vercel.app/api/stripe/webhook
+https://seu-site.netlify.app
+https://seu-site.netlify.app/login
+https://seu-site.netlify.app/register
+https://seu-site.netlify.app/pro
+```
+
+6. No Stripe Dashboard, crie webhook de produção:
+
+```txt
+https://seu-site.netlify.app/api/stripe/webhook
 ```
 
 Eventos:
@@ -102,6 +123,26 @@ customer.subscription.deleted
 invoice.paid
 invoice.payment_failed
 ```
+
+7. Copie o novo `whsec_...` do webhook de produção para `STRIPE_WEBHOOK_SECRET` na Netlify.
+8. Faça um novo deploy depois de alterar qualquer variável de ambiente.
+9. Teste no domínio Netlify:
+
+```txt
+/api/stripe/create-checkout-session
+/api/stripe/webhook
+/api/stripe/customer-portal
+/api/market/opportunities
+/pro
+/opportunities
+/alerts
+/weapons
+/regear
+/trader
+/chat
+```
+
+As rotas `/api` são Route Handlers do Next.js e são publicadas pela Netlify como funções server-side através do adapter automático. Não há redirect customizado necessário para essas rotas.
 
 ## Plano PRO
 
