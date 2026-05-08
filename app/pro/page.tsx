@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   Bell,
@@ -62,17 +62,59 @@ const statusLabels: Record<SubscriptionStatus, string> = {
 };
 
 export default function ProPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const isPro = isUserPro(user);
   const isPastDue = user?.subscriptionStatus === 'past_due';
-  const [message, setMessage] = React.useState('');
-  const [busyAction, setBusyAction] = React.useState<'checkout' | 'portal' | null>(null);
+  const isCancelingAtPeriodEnd = user?.subscriptionCancelAtPeriodEnd === true;
+  const cancelAt = user?.subscriptionCancelAt ?? user?.subscriptionCurrentPeriodEnd;
   const checkoutState = searchParams.get('checkout');
+  const [message, setMessage] = React.useState('');
+  const [checkoutNotice, setCheckoutNotice] = React.useState<'success' | 'cancelled' | null>(
+    checkoutState === 'success' || checkoutState === 'cancelled' ? checkoutState : null,
+  );
+  const [busyAction, setBusyAction] = React.useState<'checkout' | 'portal' | null>(null);
+  const [showPortalCta, setShowPortalCta] = React.useState(false);
+  const previousUserId = React.useRef<string | null | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (checkoutState !== 'success' && checkoutState !== 'cancelled') return;
+
+    router.replace('/pro', { scroll: false });
+  }, [checkoutState, router]);
+
+  React.useEffect(() => {
+    if (!checkoutNotice) return;
+
+    const timer = window.setTimeout(() => {
+      setCheckoutNotice(null);
+    }, 6500);
+
+    return () => window.clearTimeout(timer);
+  }, [checkoutNotice]);
+
+  React.useEffect(() => {
+    const currentUserId = user?.id ?? null;
+
+    if (previousUserId.current === undefined) {
+      previousUserId.current = currentUserId;
+      return;
+    }
+
+    if (previousUserId.current !== currentUserId) {
+      window.setTimeout(() => {
+        setCheckoutNotice(null);
+        setShowPortalCta(false);
+      }, 0);
+      previousUserId.current = currentUserId;
+    }
+  }, [user?.id]);
 
   const startCheckout = async () => {
     setBusyAction('checkout');
     setMessage('');
+    setShowPortalCta(false);
 
     try {
       const token = await getCurrentAccessToken();
@@ -88,9 +130,19 @@ export default function ProPage() {
           Authorization: `Bearer ${token}`,
         },
       });
-      const payload = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        url?: string;
+        error?: string;
+        action?: 'customer_portal';
+      } | null;
 
       if (!response.ok || !payload?.url) {
+        if (payload?.action === 'customer_portal') {
+          setMessage(payload.error ?? 'Você já possui uma assinatura ativa.');
+          setShowPortalCta(Boolean(user?.stripeCustomerId));
+          return;
+        }
+
         setMessage(payload?.error ?? 'Não foi possível abrir o checkout. Tente novamente.');
         return;
       }
@@ -138,10 +190,10 @@ export default function ProPage() {
 
   return (
     <div className="space-y-5" data-pro-price-label={PRO_PRICE_LABEL}>
-      {checkoutState === 'success' ? (
+      {checkoutNotice === 'success' ? (
         <Notice tone="success" message="Pagamento concluído. Seu PRO será ativado em instantes." />
       ) : null}
-      {checkoutState === 'cancelled' ? (
+      {checkoutNotice === 'cancelled' ? (
         <Notice tone="warning" message="Pagamento cancelado. Nenhuma cobrança foi feita." />
       ) : null}
       {message ? <Notice tone="warning" message={message} /> : null}
@@ -168,12 +220,20 @@ export default function ProPage() {
                 status={user?.subscriptionStatus}
                 periodEnd={user?.subscriptionCurrentPeriodEnd}
                 stripeCustomerId={user?.stripeCustomerId}
+                cancelAtPeriodEnd={isCancelingAtPeriodEnd}
+                cancelAt={cancelAt}
                 isPastDue={isPastDue}
                 busy={busyAction === 'portal'}
                 onManage={() => void openCustomerPortal()}
               />
             ) : (
-              <FreeSubscriptionPanel busy={busyAction === 'checkout'} onCheckout={() => void startCheckout()} />
+              <FreeSubscriptionPanel
+                busy={busyAction === 'checkout'}
+                portalBusy={busyAction === 'portal'}
+                showPortalCta={showPortalCta && Boolean(user?.stripeCustomerId)}
+                onCheckout={() => void startCheckout()}
+                onManage={() => void openCustomerPortal()}
+              />
             )}
           </div>
         </div>
@@ -247,7 +307,19 @@ async function getCurrentAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-function FreeSubscriptionPanel({ busy, onCheckout }: { busy: boolean; onCheckout: () => void }) {
+function FreeSubscriptionPanel({
+  busy,
+  portalBusy,
+  showPortalCta,
+  onCheckout,
+  onManage,
+}: {
+  busy: boolean;
+  portalBusy: boolean;
+  showPortalCta: boolean;
+  onCheckout: () => void;
+  onManage: () => void;
+}) {
   return (
     <>
       <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">Plano PRO</p>
@@ -261,6 +333,16 @@ function FreeSubscriptionPanel({ busy, onCheckout }: { busy: boolean; onCheckout
       >
         {busy ? 'Abrindo Stripe...' : 'Assinar PRO'}
       </button>
+      {showPortalCta ? (
+        <button
+          type="button"
+          onClick={onManage}
+          disabled={portalBusy}
+          className="mt-2 inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-border-subtle bg-zinc-900 px-4 text-sm font-black text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {portalBusy ? 'Abrindo portal...' : 'Gerenciar assinatura'}
+        </button>
+      ) : null}
     </>
   );
 }
@@ -269,6 +351,8 @@ function ProSubscriptionPanel({
   status,
   periodEnd,
   stripeCustomerId,
+  cancelAtPeriodEnd,
+  cancelAt,
   isPastDue,
   busy,
   onManage,
@@ -276,15 +360,19 @@ function ProSubscriptionPanel({
   status?: SubscriptionStatus;
   periodEnd?: string;
   stripeCustomerId?: string;
+  cancelAtPeriodEnd: boolean;
+  cancelAt?: string;
   isPastDue: boolean;
   busy: boolean;
   onManage: () => void;
 }) {
+  const accessUntil = cancelAt ?? periodEnd;
+
   return (
     <>
       <div className="flex items-center gap-2 font-black text-status-success">
         <CheckCircle2 size={18} />
-        Você está no PRO
+        {cancelAtPeriodEnd && accessUntil ? `PRO ativo até ${formatLongDate(accessUntil)}` : 'Você está no PRO'}
       </div>
       <div className="mt-3 grid gap-2 text-xs text-zinc-400">
         <p>
@@ -293,7 +381,13 @@ function ProSubscriptionPanel({
             {statusLabels[status ?? 'active']}
           </span>
         </p>
-        {periodEnd ? (
+        {cancelAtPeriodEnd && accessUntil ? (
+          <p className="rounded-lg border border-status-warning/25 bg-status-warning/10 p-3 font-bold text-status-warning">
+            Sua assinatura foi cancelada e ficará ativa até {formatLongDate(accessUntil)}.
+            <span className="mt-1 block text-zinc-300">Você não será cobrado novamente após essa data.</span>
+          </p>
+        ) : null}
+        {periodEnd && !cancelAtPeriodEnd ? (
           <p>
             Próxima renovação: <span className="font-black text-white">{formatDate(periodEnd)}</span>
           </p>
@@ -337,6 +431,14 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(value));
+}
+
+function formatLongDate(value: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'long',
     year: 'numeric',
   }).format(new Date(value));
 }

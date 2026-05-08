@@ -90,6 +90,8 @@ export type UserAccount = {
   stripeSubscriptionId?: string;
   stripePriceId?: string;
   subscriptionCurrentPeriodEnd?: string;
+  subscriptionCancelAtPeriodEnd?: boolean;
+  subscriptionCancelAt?: string;
   createdAt: string;
   updatedAt?: string;
   lastLoginAt: string;

@@ -16,6 +16,8 @@ type ProfileUpdate = {
   stripe_subscription_id?: string | null;
   stripe_price_id?: string | null;
   subscription_current_period_end?: string | null;
+  subscription_cancel_at_period_end?: boolean;
+  subscription_cancel_at?: string | null;
   updated_at: string;
 };
 
@@ -107,6 +109,8 @@ async function handleCheckoutCompleted(stripe: Stripe, session: Stripe.Checkout.
     subscription_status: 'active',
     stripe_customer_id: customerId,
     stripe_subscription_id: subscriptionId,
+    subscription_cancel_at_period_end: false,
+    subscription_cancel_at: null,
     updated_at: new Date().toISOString(),
   });
 }
@@ -147,6 +151,9 @@ async function updateProfileFromSubscription(
   const customerId = options.customerId ?? getStripeId(subscription.customer);
   const priceId = subscription.items.data[0]?.price.id ?? null;
   const periodEnd = getSubscriptionPeriodEnd(subscription);
+  const isDeleted = options.forceStatus === 'canceled';
+  const cancelAtPeriodEnd = !isDeleted && Boolean(subscription.cancel_at_period_end);
+  const cancelAt = isDeleted ? null : getSubscriptionCancelAt(subscription);
   const payload: ProfileUpdate = {
     plan,
     subscription_status: status,
@@ -154,6 +161,8 @@ async function updateProfileFromSubscription(
     stripe_subscription_id: subscription.id,
     stripe_price_id: priceId,
     subscription_current_period_end: periodEnd,
+    subscription_cancel_at_period_end: cancelAtPeriodEnd,
+    subscription_cancel_at: cancelAt,
     updated_at: new Date().toISOString(),
   };
 
@@ -228,6 +237,18 @@ function getStripeId(value: string | { id?: string } | null | undefined): string
 
 function getSubscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
   const timestamp = (subscription as Stripe.Subscription & { current_period_end?: number }).current_period_end;
+
+  if (!timestamp) return null;
+
+  return new Date(timestamp * 1000).toISOString();
+}
+
+function getSubscriptionCancelAt(subscription: Stripe.Subscription): string | null {
+  const candidate = subscription as Stripe.Subscription & {
+    cancel_at?: number | null;
+    current_period_end?: number;
+  };
+  const timestamp = candidate.cancel_at ?? (subscription.cancel_at_period_end ? candidate.current_period_end : null);
 
   if (!timestamp) return null;
 

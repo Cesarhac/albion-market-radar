@@ -34,6 +34,8 @@ type ProfileRow = {
   stripe_subscription_id: string | null;
   stripe_price_id: string | null;
   subscription_current_period_end: string | null;
+  subscription_cancel_at_period_end: boolean | null;
+  subscription_cancel_at: string | null;
   created_at: string;
   updated_at: string | null;
 };
@@ -176,6 +178,8 @@ export function profileRowToUser(row: ProfileRow, authUser?: User | null): UserA
     stripeSubscriptionId: row.stripe_subscription_id ?? undefined,
     stripePriceId: row.stripe_price_id ?? undefined,
     subscriptionCurrentPeriodEnd: row.subscription_current_period_end ?? undefined,
+    subscriptionCancelAtPeriodEnd: row.subscription_cancel_at_period_end === true,
+    subscriptionCancelAt: row.subscription_cancel_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at ?? undefined,
     lastLoginAt: new Date().toISOString(),

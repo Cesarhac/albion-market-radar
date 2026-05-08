@@ -18,6 +18,7 @@ type ProfileRow = {
   plan: SubscriptionPlan | null;
   subscription_status: SubscriptionStatus | null;
   stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   subscription_current_period_end: string | null;
 };
 
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
   const { user } = authResult;
   const { data: profileData, error: profileError } = await admin
     .from('profiles')
-    .select('id, email, player_name, plan, subscription_status, stripe_customer_id, subscription_current_period_end')
+    .select('id, email, player_name, plan, subscription_status, stripe_customer_id, stripe_subscription_id, subscription_current_period_end')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -72,6 +73,16 @@ export async function POST(request: Request) {
 
   if (!profile) {
     return NextResponse.json({ error: 'Perfil não encontrado.' }, { status: 404 });
+  }
+
+  if (profile.stripe_subscription_id && isSubscriptionStillActive(profile.subscription_status)) {
+    return NextResponse.json(
+      {
+        error: 'Você já possui uma assinatura ativa.',
+        action: 'customer_portal',
+      },
+      { status: 409 },
+    );
   }
 
   if (
@@ -179,4 +190,8 @@ async function getAuthenticatedUser(request: Request): Promise<{ user: User } | 
   }
 
   return { user: data.user };
+}
+
+function isSubscriptionStillActive(status: SubscriptionStatus | null): boolean {
+  return status === 'active' || status === 'trialing' || status === 'past_due';
 }
