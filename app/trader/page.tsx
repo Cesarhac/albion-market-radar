@@ -4,7 +4,10 @@ import React from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  Download,
   Edit3,
+  Filter,
   History,
   MinusCircle,
   PackageOpen,
@@ -17,7 +20,9 @@ import {
   X,
 } from 'lucide-react';
 import { ProGate } from '@/components/ProGate';
+import { ProUpgradeModal } from '@/components/ProUpgradeModal';
 import { Badge } from '@/components/ui/Badge';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/context/AuthContext';
 import { useUserSettings } from '@/context/UserSettingsContext';
@@ -27,17 +32,18 @@ import {
   getDisplayItemName as getCatalogDisplayItemName,
 } from '@/data/itemCatalog';
 import { calculateTraderSummary, getTraderPositionKey } from '@/lib/traderWalletStorage';
+import { getSellOrderTotalFeeRate, getTransactionTaxRate } from '@/src/lib/albionTaxes';
 import { serverParamToRegion } from '@/lib/settingsStorage';
 import {
   cn,
   formatCityName,
   formatDateTime,
   formatPercent,
-  formatRelativeTime,
   formatServerName,
   formatSilver,
 } from '@/lib/utils';
 import { formatEntitlementLimit, getUserEntitlements } from '@/src/lib/entitlements';
+import { exportTraderWalletCsv } from '@/src/services/proService';
 import {
   clearTraderOperations,
   createTraderOperation,
@@ -65,7 +71,6 @@ type TraderFormState = {
   unitBuyPrice: string;
   unitSellPrice: string;
   quantity: string;
-  taxRate: string;
   relatedPositionKey: string;
   isQuickSale: boolean;
   createdAt: string;
@@ -87,7 +92,6 @@ function createDefaultForm(settings: ReturnType<typeof useUserSettings>['setting
     unitBuyPrice: '',
     unitSellPrice: '',
     quantity: '1',
-    taxRate: String(settings.marketTax),
     relatedPositionKey: '',
     isQuickSale: false,
     createdAt: toDateTimeLocalValue(new Date().toISOString()),
@@ -107,6 +111,15 @@ export default function TraderPage() {
   const [form, setForm] = React.useState<TraderFormState>(() => createDefaultForm(settings));
   const [toast, setToast] = React.useState('');
   const [errorMessage, setErrorMessage] = React.useState('');
+  const [reportPeriod, setReportPeriod] = React.useState<'7d' | '30d' | 'all'>('30d');
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [itemFilter, setItemFilter] = React.useState('');
+  const [serverFilter, setServerFilter] = React.useState<ServerParam | 'all'>('all');
+  const [profitFilter, setProfitFilter] = React.useState<'all' | 'profit' | 'loss'>('all');
+  const [upgradeModalOpen, setUpgradeModalOpen] = React.useState(false);
+  const hasAlbionPremium = settings.hasAlbionPremium;
+  const transactionTaxRate = getTransactionTaxRate(hasAlbionPremium);
+  const sellOrderTotalFeeRate = getSellOrderTotalFeeRate(hasAlbionPremium);
 
   React.useEffect(() => {
     let isActive = true;
@@ -148,6 +161,20 @@ export default function TraderPage() {
   const summary = React.useMemo(
     () => calculateTraderSummary(wallet.operations, settings),
     [settings, wallet.operations],
+  );
+  const isPro = entitlements.exportCsv;
+  const filteredOperationMetrics = React.useMemo(
+    () => filterTraderMetrics(summary.recentOperations, {
+      itemQuery: itemFilter,
+      server: serverFilter,
+      profit: profitFilter,
+      period: reportPeriod,
+    }),
+    [itemFilter, profitFilter, reportPeriod, serverFilter, summary.recentOperations],
+  );
+  const quickReport = React.useMemo(
+    () => buildQuickTraderReport(filteredOperationMetrics, summary.positions),
+    [filteredOperationMetrics, summary.positions],
   );
   const hasReachedOperationLimit =
     Number.isFinite(entitlements.maxTraderOperations) &&
@@ -297,8 +324,18 @@ export default function TraderPage() {
     }
   }, [showToast, wallet.operations.length]);
 
+  const handleExportWallet = React.useCallback(() => {
+    if (!isPro) {
+      setUpgradeModalOpen(true);
+      return;
+    }
+
+    exportTraderWalletCsv(filteredOperationMetrics);
+  }, [filteredOperationMetrics, isPro]);
+
   return (
     <div className="space-y-8">
+      <ProUpgradeModal open={upgradeModalOpen} onClose={() => setUpgradeModalOpen(false)} />
       <header className="rounded-lg border border-border-subtle bg-[radial-gradient(circle_at_top_left,rgba(250,204,21,0.13),transparent_32%),linear-gradient(135deg,#18181b_0%,#09090b_78%)] p-5 shadow-2xl md:p-7">
         <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
           <div className="space-y-3">
@@ -323,7 +360,16 @@ export default function TraderPage() {
               </span>
             </p>
             <p className="mt-1">
-              Taxa padrão: <span className="font-black text-brand-primary">{formatPercent(settings.marketTax)}</span>
+              {hasAlbionPremium ? 'Premium ativo' : 'Sem Premium'}:{' '}
+              <span className="font-black text-brand-primary">
+                Venda rápida {formatPercent(transactionTaxRate * 100)}
+              </span>
+            </p>
+            <p className="mt-1">
+              Revenda anunciada:{' '}
+              <span className="font-black text-brand-primary">
+                {formatPercent(sellOrderTotalFeeRate * 100)} incluindo setup
+              </span>
             </p>
           </div>
         </div>
@@ -399,6 +445,72 @@ export default function TraderPage() {
         />
       ) : null}
 
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-4 shadow-xl">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 font-black text-white">
+              <ReceiptText className="text-brand-primary" size={18} />
+              Relatorio rapido
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">PRO libera filtros, CSV e análise por item/cidade.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(['7d', '30d', 'all'] as const).map((period) => (
+              <button
+                key={period}
+                type="button"
+                onClick={() => setReportPeriod(period)}
+                className={cn('secondary-button', reportPeriod === period && 'border-brand-primary/40 text-brand-primary')}
+              >
+                {period === '7d' ? '7 dias' : period === '30d' ? '30 dias' : 'Tudo'}
+              </button>
+            ))}
+            <button type="button" onClick={() => setFiltersOpen((value) => !value)} className="secondary-button">
+              <Filter size={16} />
+              Filtros
+              <ChevronDown size={15} className={filtersOpen ? 'rotate-180' : ''} />
+            </button>
+            <button type="button" onClick={handleExportWallet} className="secondary-button">
+              <Download size={16} />
+              Exportar CSV
+            </button>
+          </div>
+        </div>
+
+        {filtersOpen ? (
+          isPro ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <label className="space-y-2">
+                <span className="field-label">Item</span>
+                <input value={itemFilter} onChange={(event) => setItemFilter(event.target.value)} className="field-control" placeholder="Filtrar item" />
+              </label>
+              <SelectField label="Servidor">
+                <select value={serverFilter} onChange={(event) => setServerFilter(event.target.value as ServerParam | 'all')} className="field-control">
+                  <option value="all">Todos</option>
+                  <option value="americas">Americas</option>
+                  <option value="europe">Europa</option>
+                </select>
+              </SelectField>
+              <SelectField label="Resultado">
+                <select value={profitFilter} onChange={(event) => setProfitFilter(event.target.value as 'all' | 'profit' | 'loss')} className="field-control">
+                  <option value="all">Todos</option>
+                  <option value="profit">Lucro</option>
+                  <option value="loss">Prejuizo</option>
+                </select>
+              </SelectField>
+            </div>
+          ) : (
+            <div className="mt-3"><ProGate variant="inline" description="Filtros avançados da carteira são PRO." /></div>
+          )
+        ) : null}
+
+        {isPro ? (
+          <QuickTraderReport report={quickReport} />
+        ) : (
+          <div className="mt-3"><ProGate variant="inline" description="Relatório rápido e exportação são PRO." /></div>
+        )}
+      </section>
+
       {!isLoaded ? (
         <section className="rounded-lg border border-border-subtle bg-bg-card p-6 text-sm font-bold text-zinc-400">
           Carregando carteira no Supabase...
@@ -408,7 +520,7 @@ export default function TraderPage() {
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <OpenPositionsSection positions={summary.positions} onSell={(position) => openSaleModal(position)} />
         <RecentOperationsSection
-          operations={summary.recentOperations}
+          operations={isPro ? filteredOperationMetrics : summary.recentOperations}
           onEdit={(operation) => {
             if (operation.type === 'buy') openBuyModal(operation);
             else openSaleModal(undefined, operation);
@@ -424,6 +536,7 @@ export default function TraderPage() {
           saleMode={saleMode}
           form={form}
           positions={summary.positions}
+          hasAlbionPremium={hasAlbionPremium}
           editingOperation={editingOperation}
           errorMessage={errorMessage}
           onSaleModeChange={(nextMode) => {
@@ -456,6 +569,65 @@ export default function TraderPage() {
           onClose={closeModal}
         />
       ) : null}
+    </div>
+  );
+}
+
+type QuickTraderReportData = {
+  netProfit: number;
+  averageRoi: number;
+  bestItem: string;
+  worstItem: string;
+  bestCity: string;
+  lockedCapital: number;
+  operationsCount: number;
+  taxesPaid: number;
+  itemRows: Array<{ name: string; profit: number; operations: number }>;
+  cityRows: Array<{ name: string; profit: number; operations: number }>;
+};
+
+function QuickTraderReport({ report }: { report: QuickTraderReportData }) {
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MiniMetric label="Lucro líquido" value={formatSilver(report.netProfit)} isPositive={report.netProfit >= 0} />
+        <MiniMetric label="ROI médio" value={formatPercent(report.averageRoi)} isPositive={report.averageRoi >= 0} />
+        <MiniMetric label="Capital parado" value={formatSilver(report.lockedCapital)} />
+        <MiniMetric label="Taxas pagas" value={formatSilver(report.taxesPaid)} />
+        <MiniMetric label="Melhor item" value={report.bestItem} />
+        <MiniMetric label="Pior item" value={report.worstItem} />
+        <MiniMetric label="Melhor cidade" value={report.bestCity} />
+        <MiniMetric label="Operacoes" value={report.operationsCount} />
+      </div>
+
+      <details className="rounded-lg border border-border-subtle bg-zinc-950 p-3">
+        <summary className="cursor-pointer text-sm font-black text-white">Analise por item e cidade</summary>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <ReportTable title="Por item" rows={report.itemRows} />
+          <ReportTable title="Por cidade" rows={report.cityRows} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function ReportTable({ title, rows }: { title: string; rows: QuickTraderReportData['itemRows'] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
+      <h3 className="border-b border-border-subtle px-3 py-2 text-sm font-black text-white">{title}</h3>
+      <table className="w-full text-left text-sm">
+        <tbody className="divide-y divide-border-subtle/70">
+          {(rows.length ? rows : [{ name: 'Sem vendas', profit: 0, operations: 0 }]).slice(0, 5).map((row) => (
+            <tr key={row.name}>
+              <td className="px-3 py-2 font-bold text-zinc-300">{row.name}</td>
+              <td className={cn('px-3 py-2 text-right font-black', row.profit >= 0 ? 'text-status-success' : 'text-status-danger')}>
+                {formatSilver(row.profit)}
+              </td>
+              <td className="px-3 py-2 text-right text-xs text-zinc-500">{row.operations}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -495,7 +667,7 @@ function OpenPositionsSection({
                 </div>
                 {position.itemId ? <p className="mt-1 break-all font-mono text-[11px] text-zinc-600">{position.itemId}</p> : null}
                 <p className="mt-2 text-xs text-zinc-500">
-                  Atualizado {formatRelativeTime(position.lastUpdatedAt)}
+                  <RelativeTime date={position.lastUpdatedAt} prefix="Atualizado" />
                   {position.lastCity ? ` em ${formatCityName(position.lastCity)}` : ''}
                 </p>
               </div>
@@ -582,10 +754,9 @@ function RecentOperationsSection({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={isSale ? (isPositive ? 'success' : 'danger') : 'outline'}>
-                      {isSale ? 'Venda' : 'Compra'}
+                      {isSale ? (operation.isQuickSale ? 'Venda rápida' : 'Revenda anunciada') : 'Compra'}
                     </Badge>
                     {operation.server ? <Badge variant="muted">{formatServerParam(operation.server)}</Badge> : null}
-                    {operation.isQuickSale ? <Badge variant="warning">Venda rápida</Badge> : null}
                   </div>
                   <h3 className="mt-2 truncate text-lg font-black text-white">{operation.itemName}</h3>
                   <p className="mt-1 text-xs text-zinc-500">
@@ -625,7 +796,10 @@ function RecentOperationsSection({
                     <MiniMetric label="Preço de venda" value={formatSilver(operation.unitSellPrice ?? 0)} />
                     <MiniMetric label="Lucro líquido" value={formatSilver(metric.netProfit)} isPositive={isPositive} />
                     <MiniMetric label="ROI" value={formatPercent(metric.roi)} isPositive={isPositive} />
-                    <MiniMetric label="Taxa" value={formatSilver(metric.tax)} />
+                    <MiniMetric
+                      label={operation.isQuickSale ? 'Taxa venda rápida' : 'Taxa revenda anunciada'}
+                      value={formatSilver(metric.tax)}
+                    />
                   </>
                 )}
               </div>
@@ -644,6 +818,7 @@ function TraderOperationModal({
   saleMode,
   form,
   positions,
+  hasAlbionPremium,
   editingOperation,
   errorMessage,
   onSaleModeChange,
@@ -656,6 +831,7 @@ function TraderOperationModal({
   saleMode: SaleMode;
   form: TraderFormState;
   positions: TraderPosition[];
+  hasAlbionPremium: boolean;
   editingOperation: TraderOperation | null;
   errorMessage: string;
   onSaleModeChange: (mode: SaleMode) => void;
@@ -672,6 +848,8 @@ function TraderOperationModal({
   const selectedPosition = positions.find((position) => position.key === form.relatedPositionKey) ?? null;
   const isBuy = mode === 'buy';
   const isQuickSale = mode === 'sell' && saleMode === 'quick';
+  const transactionTaxRate = getTransactionTaxRate(hasAlbionPremium);
+  const sellOrderTotalFeeRate = getSellOrderTotalFeeRate(hasAlbionPremium);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/75 backdrop-blur-sm md:items-center md:justify-center">
@@ -682,7 +860,7 @@ function TraderOperationModal({
               {editingOperation ? 'Editar operação' : isBuy ? 'Registrar compra' : 'Registrar venda'}
             </h2>
             <p className="mt-1 text-sm text-zinc-500">
-              {isBuy ? 'Entrada de item na carteira.' : 'Venda de item aberto ou venda rápida sem compra anterior.'}
+              {isBuy ? 'Entrada de item na carteira.' : 'Escolha entre revenda anunciada de item em aberto ou venda rápida sem compra anterior.'}
             </p>
           </div>
           <button
@@ -708,7 +886,7 @@ function TraderOperationModal({
                     : 'border-border-subtle bg-zinc-950 text-zinc-400 hover:text-white',
                 )}
               >
-                Item em aberto
+                Revenda anunciada
               </button>
               <button
                 type="button"
@@ -829,14 +1007,17 @@ function TraderOperationModal({
           </div>
 
           {!isBuy ? (
-            <NumberField
-              label="Taxa (%)"
-              value={form.taxRate}
-              min={0}
-              max={30}
-              step={0.1}
-              onChange={(value) => onChange({ taxRate: value })}
-            />
+            <div className="rounded-lg border border-border-subtle bg-zinc-950 p-3 text-sm text-zinc-400">
+              <p className="font-black text-white">
+                {hasAlbionPremium ? 'Premium ativo no Albion' : 'Sem Premium'}
+              </p>
+              <p className="mt-1">
+                {isQuickSale
+                  ? `Venda rápida: taxa de transação ${formatPercent(transactionTaxRate * 100)}.`
+                  : `Revenda anunciada: ${formatPercent(sellOrderTotalFeeRate * 100)} incluindo taxa de criação de ordem.`}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">Calculado automaticamente nas Configurações.</p>
+            </div>
           ) : null}
 
           <label className="space-y-2">
@@ -1040,9 +1221,6 @@ function validateForm(
   const unitSellPrice = Number(form.unitSellPrice);
   if (!Number.isFinite(unitSellPrice) || unitSellPrice <= 0) return 'Informe o preço unitário de venda.';
 
-  const taxRate = Number(form.taxRate);
-  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 30) return 'A taxa precisa estar entre 0% e 30%.';
-
   if (saleMode === 'quick') {
     const unitBuyPrice = Number(form.unitBuyPrice);
     if (!Number.isFinite(unitBuyPrice) || unitBuyPrice <= 0) return 'Informe o preço de compra unitário.';
@@ -1093,7 +1271,6 @@ function operationFromForm(
     type: 'sell',
     unitBuyPrice: saleMode === 'quick' ? Number(form.unitBuyPrice) : Number(form.unitBuyPrice || 0),
     unitSellPrice: Number(form.unitSellPrice),
-    taxRate: Number(form.taxRate),
     relatedPositionKey: saleMode === 'open' ? form.relatedPositionKey : undefined,
     isQuickSale: saleMode === 'quick',
   };
@@ -1112,7 +1289,6 @@ function formFromOperation(
     unitBuyPrice: operation.unitBuyPrice ? String(operation.unitBuyPrice) : '',
     unitSellPrice: operation.unitSellPrice ? String(operation.unitSellPrice) : '',
     quantity: String(operation.quantity || 1),
-    taxRate: String(operation.taxRate ?? settings.marketTax),
     relatedPositionKey: operation.relatedPositionKey ?? getTraderPositionKey(operation),
     isQuickSale: Boolean(operation.isQuickSale),
     createdAt: toDateTimeLocalValue(operation.createdAt),
@@ -1140,6 +1316,86 @@ function fromDateTimeLocalValue(value: string): string {
 
 function sortOperationsDescending(operations: TraderOperation[]): TraderOperation[] {
   return [...operations].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function filterTraderMetrics(
+  rows: TraderOperationMetrics[],
+  filters: {
+    itemQuery: string;
+    server: ServerParam | 'all';
+    profit: 'all' | 'profit' | 'loss';
+    period: '7d' | '30d' | 'all';
+  },
+): TraderOperationMetrics[] {
+  const normalizedQuery = filters.itemQuery.trim().toLowerCase();
+  const minTime = getReportMinTime(filters.period);
+
+  return rows.filter((row) => {
+    const operation = row.operation;
+    const createdTime = new Date(operation.createdAt).getTime();
+    const matchesPeriod = !minTime || (Number.isFinite(createdTime) && createdTime >= minTime);
+    const matchesItem =
+      !normalizedQuery ||
+      operation.itemName.toLowerCase().includes(normalizedQuery) ||
+      (operation.itemId ?? '').toLowerCase().includes(normalizedQuery);
+    const matchesServer = filters.server === 'all' || operation.server === filters.server;
+    const matchesProfit =
+      filters.profit === 'all' ||
+      (filters.profit === 'profit' && row.netProfit >= 0) ||
+      (filters.profit === 'loss' && row.netProfit < 0);
+
+    return matchesPeriod && matchesItem && matchesServer && matchesProfit;
+  });
+}
+
+function buildQuickTraderReport(rows: TraderOperationMetrics[], positions: TraderPosition[]): QuickTraderReportData {
+  const saleRows = rows.filter((row) => row.operation.type === 'sell');
+  const netProfit = saleRows.reduce((total, row) => total + row.netProfit, 0);
+  const taxesPaid = saleRows.reduce((total, row) => total + row.tax, 0);
+  const averageRoi = saleRows.length > 0
+    ? saleRows.reduce((total, row) => total + row.roi, 0) / saleRows.length
+    : 0;
+  const itemRows = aggregateReportRows(saleRows, (row) => row.operation.itemName);
+  const cityRows = aggregateReportRows(saleRows, (row) => row.operation.city ?? 'Sem cidade');
+
+  return {
+    netProfit,
+    averageRoi,
+    bestItem: itemRows[0]?.name ?? 'Sem vendas',
+    worstItem: [...itemRows].sort((a, b) => a.profit - b.profit)[0]?.name ?? 'Sem vendas',
+    bestCity: cityRows[0]?.name ?? 'Sem cidade',
+    lockedCapital: positions.reduce((total, position) => total + position.totalInvested, 0),
+    operationsCount: rows.length,
+    taxesPaid,
+    itemRows,
+    cityRows,
+  };
+}
+
+function aggregateReportRows(
+  rows: TraderOperationMetrics[],
+  getKey: (row: TraderOperationMetrics) => string,
+): QuickTraderReportData['itemRows'] {
+  const totals = new Map<string, { name: string; profit: number; operations: number }>();
+
+  for (const row of rows) {
+    const key = getKey(row);
+    const current = totals.get(key) ?? { name: key, profit: 0, operations: 0 };
+
+    current.profit += row.netProfit;
+    current.operations += 1;
+    totals.set(key, current);
+  }
+
+  return [...totals.values()].sort((a, b) => b.profit - a.profit);
+}
+
+function getReportMinTime(period: '7d' | '30d' | 'all'): number | null {
+  if (period === 'all') return null;
+
+  const days = period === '7d' ? 7 : 30;
+
+  return Date.now() - days * 24 * 60 * 60 * 1000;
 }
 
 function formatServerParam(server: ServerParam): string {

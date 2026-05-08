@@ -35,6 +35,27 @@ export type RegearSlotForm = {
   quantity: number;
 };
 
+export type BuildSlotSelection = {
+  uniqueName: string | null;
+  itemName: string | null;
+  itemNameEn?: string | null;
+  tier?: number | null;
+  enchantment?: number | null;
+  quality?: Quality | null;
+  quantity?: number | null;
+};
+
+export type SavedBuildSlots = Record<RegearSlotId, BuildSlotSelection>;
+
+export type SavedBuild = {
+  id: string;
+  userId: string;
+  name: string;
+  slots: SavedBuildSlots;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type RegearPresetSlot = Omit<RegearSlotForm, 'selectedUniqueName'>;
 
 export type RegearPreset = {

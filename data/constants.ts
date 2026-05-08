@@ -1,6 +1,7 @@
 import type { AlbionCity, Enchantment, ItemCategory, Quality, ServerRegion, Tier } from '@/types/albion';
 
 export const MARKET_SERVER_REGIONS: ServerRegion[] = ['Americas', 'Europe'];
+export const BLACK_MARKET_LOCATION: AlbionCity = 'Black Market';
 
 export const TIERS: Tier[] = [4, 5, 6, 7, 8];
 
@@ -30,5 +31,9 @@ export const ALBION_CITIES: AlbionCity[] = [
   'Lymhurst',
   'Caerleon',
   'Brecilien',
-  'Black Market',
+  BLACK_MARKET_LOCATION,
 ];
+
+export const BLACK_MARKET_BUY_CITIES: AlbionCity[] = ALBION_CITIES.filter(
+  (city) => city !== BLACK_MARKET_LOCATION,
+);

@@ -8,6 +8,7 @@ import type {
   TraderWallet,
 } from '@/types/trader';
 import { normalizePlayerName } from '@/lib/authStorage';
+import { getSellOrderTotalFeeRate, getTransactionTaxRate } from '@/src/lib/albionTaxes';
 
 const STORAGE_KEY = 'albion-market-radar:trader-wallet';
 const EMPTY_WALLET: TraderWallet = {
@@ -101,10 +102,11 @@ export function clearWallet(playerName?: string): TraderWallet {
 
 export function calculateTraderSummary(
   operations: TraderOperation[],
-  settings: Pick<UserSettings, 'marketTax'>,
+  settings: Pick<UserSettings, 'hasAlbionPremium'>,
 ): TraderSummary {
   const positions = new Map<string, RunningPosition>();
   const metrics: TraderOperationMetrics[] = [];
+  const breakEvenFeeRate = getSellOrderTotalFeeRate(settings.hasAlbionPremium);
   let netProfit = 0;
   let totalRevenue = 0;
   let totalTaxes = 0;
@@ -127,7 +129,7 @@ export function calculateTraderSummary(
         currentPosition.totalInvested = currentPosition.totalCost;
         currentPosition.breakEvenPrice = calculateBreakEvenPrice(
           currentPosition.averageBuyPrice,
-          settings.marketTax,
+          breakEvenFeeRate,
         );
         currentPosition.lastCity = operation.city ?? currentPosition.lastCity;
         currentPosition.lastUpdatedAt = operation.createdAt;
@@ -142,7 +144,7 @@ export function calculateTraderSummary(
           averageBuyPrice: unitPrice,
           totalInvested: total,
           totalCost: total,
-          breakEvenPrice: calculateBreakEvenPrice(unitPrice, settings.marketTax),
+          breakEvenPrice: calculateBreakEvenPrice(unitPrice, breakEvenFeeRate),
           lastCity: operation.city,
           lastUpdatedAt: operation.createdAt,
           operationsCount: 1,
@@ -165,8 +167,10 @@ export function calculateTraderSummary(
     const quantity = positiveNumber(operation.quantity);
     const unitSellPrice = positiveNumber(operation.unitSellPrice);
     const revenue = unitSellPrice * quantity;
-    const taxRate = operation.taxRate ?? settings.marketTax;
-    const tax = revenue * (taxRate / 100);
+    const feeRate = operation.isQuickSale
+      ? getTransactionTaxRate(settings.hasAlbionPremium)
+      : getSellOrderTotalFeeRate(settings.hasAlbionPremium);
+    const tax = revenue * feeRate;
     const key = operation.relatedPositionKey ?? getTraderPositionKey(operation);
     const currentPosition = positions.get(key);
     const unitCost =
@@ -186,7 +190,7 @@ export function calculateTraderSummary(
       currentPosition.totalInvested = currentPosition.totalCost;
       currentPosition.breakEvenPrice = calculateBreakEvenPrice(
         currentPosition.averageBuyPrice,
-        settings.marketTax,
+        breakEvenFeeRate,
       );
       currentPosition.lastUpdatedAt = operation.createdAt;
 
@@ -240,8 +244,8 @@ export function getTraderPositionKey(operation: Pick<TraderOperation, 'itemId' |
   return `${operation.server ?? 'sem-servidor'}:${itemKey}`;
 }
 
-export function calculateBreakEvenPrice(unitCost: number, taxRate: number): number {
-  const taxFactor = 1 - taxRate / 100;
+export function calculateBreakEvenPrice(unitCost: number, feeRate: number): number {
+  const taxFactor = 1 - feeRate;
 
   if (unitCost <= 0 || taxFactor <= 0) return 0;
 

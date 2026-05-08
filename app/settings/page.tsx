@@ -20,6 +20,10 @@ import type { ServerParam } from '@/types/albion';
 import type { UserSettings, UserSettingsFeedback } from '@/types/settings';
 import { intervalLabel, mergeWithDefaultSettings } from '@/lib/settingsStorage';
 import { cn, formatCityName, formatPercent } from '@/lib/utils';
+import {
+  getSellOrderTotalFeeRate,
+  getTransactionTaxRate,
+} from '@/src/lib/albionTaxes';
 
 const SERVER_OPTIONS: Array<{ value: ServerParam; label: string }> = [
   { value: 'americas', label: 'Américas' },
@@ -35,13 +39,45 @@ const MAIN_CITY_OPTIONS: UserSettings['mainCity'][] = [
   'Brecilien',
 ];
 const UPDATE_INTERVAL_OPTIONS = [5, 10, 30, 60];
+const SETTINGS_SECTIONS = [
+  {
+    id: 'general',
+    label: 'Geral',
+    title: 'Preferências gerais',
+    description: 'Servidor, cidade principal e tema usados como padrão no radar.',
+  },
+  {
+    id: 'market',
+    label: 'Mercado',
+    title: 'Mercado',
+    description: 'Parâmetros usados no cálculo de lucro líquido e atualização de preços.',
+  },
+  {
+    id: 'local',
+    label: 'Preferências locais',
+    title: 'Preferências locais',
+    description: 'Ajustes de interface e exibição salvos para sua conta.',
+  },
+  {
+    id: 'future',
+    label: 'Integração futura',
+    title: 'Integração futura',
+    description: 'Espaço reservado para integrações planejadas.',
+  },
+] as const;
+
+type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id'];
 
 export default function SettingsPage() {
   const { settings, isLoaded, saveSettings, resetSettings } = useUserSettings();
+  const [selectedSection, setSelectedSection] = React.useState<SettingsSectionId>('general');
   const [draft, setDraft] = React.useState<Partial<UserSettings>>({});
   const [feedback, setFeedback] = React.useState<UserSettingsFeedback>(null);
   const [errorMessage, setErrorMessage] = React.useState('');
   const currentSettings = mergeWithDefaultSettings({ ...settings, ...draft });
+  const activeSection = SETTINGS_SECTIONS.find((section) => section.id === selectedSection) ?? SETTINGS_SECTIONS[0];
+  const transactionTaxRate = getTransactionTaxRate(currentSettings.hasAlbionPremium);
+  const sellOrderTotalFeeRate = getSellOrderTotalFeeRate(currentSettings.hasAlbionPremium);
 
   const showFeedback = (nextFeedback: UserSettingsFeedback) => {
     setFeedback(nextFeedback);
@@ -55,18 +91,9 @@ export default function SettingsPage() {
   };
 
   const handleSave = () => {
-    const rawMarketTax = Number(draft.marketTax ?? settings.marketTax);
-
-    if (!Number.isFinite(rawMarketTax) || rawMarketTax < 0 || rawMarketTax > 30) {
-      setErrorMessage('A taxa de mercado precisa estar entre 0% e 30%.');
-      setFeedback('error');
-      return;
-    }
-
     const normalizedSettings = mergeWithDefaultSettings({
       ...settings,
       ...draft,
-      marketTax: rawMarketTax,
     });
 
     try {
@@ -109,10 +136,16 @@ export default function SettingsPage() {
 
           <div className="rounded-lg border border-brand-primary/20 bg-brand-primary/10 p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-brand-primary/80">
-              Taxa considerada
+              Calculado automaticamente
             </p>
             <p className="mt-1 text-2xl font-black text-brand-primary">
-              {formatPercent(currentSettings.marketTax)}
+              {currentSettings.hasAlbionPremium ? 'Com Premium' : 'Sem Premium'}
+            </p>
+            <p className="mt-1 text-xs font-bold text-zinc-400">
+              Venda rápida: {formatPercent(transactionTaxRate * 100)}
+            </p>
+            <p className="mt-1 text-xs font-bold text-zinc-400">
+              Revenda anunciada: {formatPercent(sellOrderTotalFeeRate * 100)}
             </p>
           </div>
         </div>
@@ -141,139 +174,225 @@ export default function SettingsPage() {
             <SlidersHorizontal className="text-brand-primary" size={18} />
             Seções
           </div>
-          {['Geral', 'Mercado', 'Preferências locais', 'Integração futura'].map((item, index) => (
+          {SETTINGS_SECTIONS.map((section) => (
             <button
-              key={item}
+              key={section.id}
               type="button"
+              onClick={() => setSelectedSection(section.id)}
               className={cn(
                 'mb-1 block w-full rounded-lg px-3 py-3 text-left text-sm font-bold transition-colors',
-                index === 0
+                selectedSection === section.id
                   ? 'border border-brand-primary/25 bg-brand-primary/10 text-brand-primary'
                   : 'text-zinc-500 hover:bg-zinc-950 hover:text-white',
               )}
+              aria-pressed={selectedSection === section.id}
             >
-              {item}
+              {section.label}
             </button>
           ))}
         </aside>
 
         <div className="rounded-lg border border-border-subtle bg-bg-card shadow-2xl">
           <div className="border-b border-border-subtle p-5">
-            <h2 className="text-xl font-black text-white">Preferências gerais</h2>
+            <h2 className="text-xl font-black text-white">{activeSection.title}</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              As preferências são salvas no Supabase para o player logado.
+              {activeSection.description}
             </p>
           </div>
 
           <div className="divide-y divide-border-subtle/70">
-            <SettingRow
-              icon={Globe2}
-              title="Servidor padrão"
-              description="Usado como servidor inicial em busca, oportunidades e regear."
-            >
-              <select
-                value={currentSettings.defaultServer}
-                onChange={(event) => updateDraft('defaultServer', event.target.value as ServerParam)}
-                className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary"
-              >
-                {SERVER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </SettingRow>
+            {selectedSection === 'general' ? (
+              <>
+                <SettingRow
+                  icon={Globe2}
+                  title="Servidor padrão"
+                  description="Usado como servidor inicial em busca, oportunidades e regear."
+                >
+                  <select
+                    value={currentSettings.defaultServer}
+                    onChange={(event) => updateDraft('defaultServer', event.target.value as ServerParam)}
+                    className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary"
+                  >
+                    {SERVER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </SettingRow>
 
-            <SettingRow
-              icon={Percent}
-              title="Taxa de mercado considerada"
-              description="Base para calcular lucro líquido nas rotas e na busca."
-            >
-              <div className="relative">
-                <input
-                  type="number"
-                  min={0}
-                  max={30}
-                  step={0.1}
-                  value={currentSettings.marketTax}
-                  onChange={(event) => updateDraft('marketTax', Number(event.target.value))}
-                  className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 pr-10 text-sm font-bold text-white outline-none focus:border-brand-primary"
+                <SettingRow
+                  icon={MapPin}
+                  title="Cidade principal"
+                  description="Preferência local para recursos futuros de rota e regear."
+                >
+                  <select
+                    value={currentSettings.mainCity}
+                    onChange={(event) => updateDraft('mainCity', event.target.value as UserSettings['mainCity'])}
+                    className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary"
+                  >
+                    {MAIN_CITY_OPTIONS.map((city) => (
+                      <option key={city} value={city}>
+                        {formatCityName(city)}
+                      </option>
+                    ))}
+                  </select>
+                </SettingRow>
+
+                <SettingRow
+                  icon={Moon}
+                  title="Tema escuro ativado"
+                  description="Pode ficar sempre ativo por enquanto, mas a preferência é persistida."
+                >
+                  <button
+                    type="button"
+                    onClick={() => updateDraft('darkTheme', !currentSettings.darkTheme)}
+                    className={cn(
+                      'flex h-11 w-20 items-center rounded-full border p-1 transition-colors',
+                      currentSettings.darkTheme
+                        ? 'justify-end border-brand-primary/25 bg-brand-primary/20'
+                        : 'justify-start border-border-subtle bg-zinc-950',
+                    )}
+                    aria-pressed={currentSettings.darkTheme}
+                  >
+                    <span className="h-8 w-8 rounded-full bg-brand-primary shadow-lg" />
+                  </button>
+                </SettingRow>
+              </>
+            ) : null}
+
+            {selectedSection === 'market' ? (
+              <>
+                <SettingRow
+                  icon={Percent}
+                  title="Premium no Albion"
+                  description="Usamos isso para calcular automaticamente as taxas de mercado."
+                >
+                  <button
+                    type="button"
+                    onClick={() => updateDraft('hasAlbionPremium', !currentSettings.hasAlbionPremium)}
+                    className={cn(
+                      'flex min-h-11 items-center justify-between gap-3 rounded-lg border px-3 text-left text-sm font-black transition-colors',
+                      currentSettings.hasAlbionPremium
+                        ? 'border-brand-primary/40 bg-brand-primary/10 text-brand-primary'
+                        : 'border-border-subtle bg-zinc-950 text-zinc-400 hover:text-white',
+                    )}
+                    aria-pressed={currentSettings.hasAlbionPremium}
+                  >
+                    <span>Tenho Premium ativo no Albion Online</span>
+                    <span
+                      className={cn(
+                        'flex h-6 w-11 items-center rounded-full border p-0.5 transition-colors',
+                        currentSettings.hasAlbionPremium
+                          ? 'justify-end border-brand-primary/40 bg-brand-primary/30'
+                          : 'justify-start border-border-subtle bg-zinc-900',
+                      )}
+                    >
+                      <span className="h-4 w-4 rounded-full bg-current" />
+                    </span>
+                  </button>
+                </SettingRow>
+
+                <div className="p-5 pt-0">
+                  <div className="rounded-lg border border-border-subtle bg-zinc-950 p-4 text-sm leading-relaxed text-zinc-400">
+                    <p className="font-bold text-zinc-200">
+                      Venda rápida ({currentSettings.hasAlbionPremium ? 'com Premium' : 'sem Premium'}): taxa de transação{' '}
+                      {formatPercent(transactionTaxRate * 100)}.
+                    </p>
+                    <p className="mt-1">
+                      Revenda anunciada: {formatPercent(sellOrderTotalFeeRate * 100)} incluindo taxa de criação de ordem.
+                    </p>
+                    <p className="mt-1">
+                      A taxa de criação/alteração de ordem é {formatPercent(2.5)} para todos.
+                    </p>
+                  </div>
+                </div>
+
+                <SettingRow
+                  icon={RefreshCw}
+                  title="Intervalo de atualização desejado"
+                  description="Preferência para futuras consultas automáticas e alertas."
+                >
+                  <select
+                    value={currentSettings.updateInterval}
+                    onChange={(event) => updateDraft('updateInterval', Number(event.target.value))}
+                    className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary"
+                  >
+                    {UPDATE_INTERVAL_OPTIONS.map((minutes) => (
+                      <option key={minutes} value={minutes}>
+                        {intervalLabel(minutes)}
+                      </option>
+                    ))}
+                  </select>
+                </SettingRow>
+              </>
+            ) : null}
+
+            {selectedSection === 'local' ? (
+              <>
+                <SettingRow
+                  icon={SlidersHorizontal}
+                  title="Densidade da interface"
+                  description="Compacto mostra mais linhas por tela em oportunidades, trader, regear e armas."
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['comfortable', 'compact'] as const).map((density) => (
+                      <button
+                        key={density}
+                        type="button"
+                        onClick={() => updateDraft('interfaceDensity', density)}
+                        className={cn(
+                          'h-11 rounded-lg border px-3 text-sm font-black transition-colors',
+                          currentSettings.interfaceDensity === density
+                            ? 'border-brand-primary/40 bg-brand-primary/10 text-brand-primary'
+                            : 'border-border-subtle bg-zinc-950 text-zinc-400 hover:text-white',
+                        )}
+                      >
+                        {density === 'compact' ? 'Compacto' : 'Confortável'}
+                      </button>
+                    ))}
+                  </div>
+                </SettingRow>
+
+                <SettingRow
+                  icon={Coins}
+                  title="Moeda exibida"
+                  description="A interface usa prata como moeda padrão."
+                >
+                  <div className="h-11 rounded-lg border border-border-subtle bg-zinc-950 px-3 py-3 text-sm font-black text-white opacity-80">
+                    Prata
+                  </div>
+                </SettingRow>
+              </>
+            ) : null}
+
+            {selectedSection === 'future' ? (
+              <div className="grid gap-4 p-5 md:grid-cols-2">
+                <FutureIntegrationCard
+                  title="Discord e e-mail"
+                  description="Alertas externos serão adicionados futuramente sem prometer disparos com o site fechado nesta versão."
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-500">%</span>
+                <FutureIntegrationCard
+                  title="Web Push em segundo plano"
+                  description="Planejado para alertas em segundo plano com service worker e rotina segura no backend."
+                />
+                <FutureIntegrationCard
+                  title="Cache dedicado"
+                  description="A próxima etapa pode separar cache de mercado por servidor, cidade, item e qualidade."
+                />
+                <FutureIntegrationCard
+                  title="Integrações de guilda"
+                  description="Espaço reservado para rotas de regear, grupos e preferências compartilhadas."
+                />
               </div>
-            </SettingRow>
-
-            <SettingRow
-              icon={MapPin}
-              title="Cidade principal"
-              description="Preferência local para recursos futuros de rota e regear."
-            >
-              <select
-                value={currentSettings.mainCity}
-                onChange={(event) => updateDraft('mainCity', event.target.value as UserSettings['mainCity'])}
-                className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary"
-              >
-                {MAIN_CITY_OPTIONS.map((city) => (
-                  <option key={city} value={city}>
-                    {formatCityName(city)}
-                  </option>
-                ))}
-              </select>
-            </SettingRow>
-
-            <SettingRow
-              icon={RefreshCw}
-              title="Intervalo de atualização desejado"
-              description="Preferência para futuras consultas automáticas e alertas."
-            >
-              <select
-                value={currentSettings.updateInterval}
-                onChange={(event) => updateDraft('updateInterval', Number(event.target.value))}
-                className="h-11 w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary"
-              >
-                {UPDATE_INTERVAL_OPTIONS.map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    {intervalLabel(minutes)}
-                  </option>
-                ))}
-              </select>
-            </SettingRow>
-
-            <SettingRow
-              icon={Moon}
-              title="Tema escuro ativado"
-              description="Pode ficar sempre ativo por enquanto, mas a preferência é persistida."
-            >
-              <button
-                type="button"
-                onClick={() => updateDraft('darkTheme', !currentSettings.darkTheme)}
-                className={cn(
-                  'flex h-11 w-20 items-center rounded-full border p-1 transition-colors',
-                  currentSettings.darkTheme
-                    ? 'justify-end border-brand-primary/25 bg-brand-primary/20'
-                    : 'justify-start border-border-subtle bg-zinc-950',
-                )}
-                aria-pressed={currentSettings.darkTheme}
-              >
-                <span className="h-8 w-8 rounded-full bg-brand-primary shadow-lg" />
-              </button>
-            </SettingRow>
-
-            <SettingRow
-              icon={Coins}
-              title="Moeda exibida"
-              description="A interface usa prata como moeda padrão."
-            >
-              <div className="h-11 rounded-lg border border-border-subtle bg-zinc-950 px-3 py-3 text-sm font-black text-white opacity-80">
-                Prata
-              </div>
-            </SettingRow>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-3 border-t border-border-subtle bg-zinc-950/50 p-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs font-bold uppercase tracking-wide text-zinc-600">
               Valores atuais: {SERVER_OPTIONS.find((item) => item.value === currentSettings.defaultServer)?.label},{' '}
-              {formatPercent(currentSettings.marketTax)}, {formatCityName(currentSettings.mainCity)}.
+              {currentSettings.hasAlbionPremium ? 'Premium ativo' : 'sem Premium'}, {formatCityName(currentSettings.mainCity)},{' '}
+              {currentSettings.interfaceDensity === 'compact' ? 'compacto' : 'confortável'}.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
@@ -311,6 +430,15 @@ function FeedbackPanel({ message, variant }: { message: string; variant: 'succes
     <div className={cn('flex items-start gap-3 rounded-lg border p-4', variantClasses[variant])}>
       <CheckCircle2 className="mt-0.5 shrink-0" size={20} />
       <p className="text-sm font-bold">{message}</p>
+    </div>
+  );
+}
+
+function FutureIntegrationCard({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-zinc-950 p-4">
+      <h3 className="font-black text-white">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-zinc-500">{description}</p>
     </div>
   );
 }

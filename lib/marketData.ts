@@ -70,6 +70,7 @@ export function buildMarketMeta(
   qualityIds: number[],
   message?: string,
   source: MarketResponseMeta['source'] = 'live',
+  locations: AlbionCity[] = ALBION_CITIES,
 ): MarketResponseMeta {
   const serverParam = serverToParam(server);
 
@@ -77,7 +78,7 @@ export function buildMarketMeta(
     server: serverParam,
     serverLabel: serverParamToLabel(serverParam),
     sourceHost: ALBION_DATA_HOST_BY_SERVER[serverParam],
-    requestedLocations: [...ALBION_CITIES],
+    requestedLocations: [...locations],
     requestedQualities: qualityIds,
     fetchedAt: new Date().toISOString(),
     source,

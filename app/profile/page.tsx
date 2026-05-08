@@ -2,10 +2,10 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, Crown, LogOut, RefreshCw, Save, UserRound } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, LogOut, RefreshCw, Save, UserRound } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/context/AuthContext';
-import type { ServerParam, SubscriptionPlan, UserAccount } from '@/types/albion';
+import type { ServerParam, UserAccount } from '@/types/albion';
 import { formatDateTime } from '@/lib/utils';
 
 type ProfileFormState = {
@@ -21,7 +21,6 @@ export default function ProfilePage() {
     updateProfile,
     refreshAlbionPlayerData,
     logout,
-    setDevelopmentPlan,
     configurationError,
   } = useAuth();
   const [form, setForm] = React.useState<ProfileFormState>({
@@ -33,8 +32,6 @@ export default function ProfilePage() {
   const [errorMessage, setErrorMessage] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [isChangingPlan, setIsChangingPlan] = React.useState(false);
-  const isDevelopment = process.env.NODE_ENV === 'development';
 
   React.useEffect(() => {
     if (!user) return;
@@ -111,21 +108,6 @@ export default function ProfilePage() {
   const handleLogout = async () => {
     await logout();
     router.push('/');
-  };
-
-  const handlePlanChange = async (plan: SubscriptionPlan) => {
-    setIsChangingPlan(true);
-    setFeedback('');
-    setErrorMessage('');
-
-    try {
-      await setDevelopmentPlan(plan);
-      setFeedback(plan === 'pro' ? 'Plano PRO ativado para teste.' : 'Plano FREE restaurado para teste.');
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível alterar o plano de teste.');
-    } finally {
-      setIsChangingPlan(false);
-    }
   };
 
   return (
@@ -215,35 +197,10 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {isDevelopment ? (
-            <div className="rounded-lg border border-brand-primary/20 bg-brand-primary/10 p-5">
-              <h2 className="flex items-center gap-2 font-black text-brand-primary">
-                <Crown size={18} />
-                Teste de plano
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-300">
-                Visível apenas em desenvolvimento para validar limites Free/Pro sem checkout real.
-              </p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => handlePlanChange('pro')}
-                  disabled={isChangingPlan}
-                  className="primary-button justify-center"
-                >
-                  Ativar PRO
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePlanChange('free')}
-                  disabled={isChangingPlan}
-                  className="secondary-button justify-center"
-                >
-                  Voltar FREE
-                </button>
-              </div>
-            </div>
-          ) : null}
+          <div className="rounded-lg border border-brand-primary/20 bg-brand-primary/10 p-5 text-sm leading-relaxed text-zinc-300">
+            Testes PRO devem ser feitos no Supabase alterando o perfil para plan = pro e
+            subscription_status = active. O aplicativo não oferece ativação manual em produção.
+          </div>
 
           <div className="rounded-lg border border-border-subtle bg-bg-card p-5 text-sm leading-relaxed text-zinc-400">
             Você poderá importar dados locais deste navegador em uma etapa futura. O localStorage antigo não foi apagado.
@@ -288,8 +245,14 @@ function planStatusLabel(status: UserAccount['subscriptionStatus']): string {
   const labels: Record<UserAccount['subscriptionStatus'], string> = {
     free: 'Free',
     active: 'Ativo',
+    trialing: 'Teste ativo',
     past_due: 'Pagamento pendente',
     canceled: 'Cancelado',
+    unpaid: 'Não pago',
+    incomplete: 'Incompleto',
+    incomplete_expired: 'Expirado',
+    inactive: 'Inativo',
+    paused: 'Pausado',
   };
 
   return labels[status];

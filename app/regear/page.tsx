@@ -20,10 +20,14 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+import { BuildEditorPaperDoll } from '@/components/regear/BuildEditorPaperDoll';
 import { Badge } from '@/components/ui/Badge';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import { StatCard } from '@/components/ui/StatCard';
+import { useAuth } from '@/context/AuthContext';
 import { useUserSettings } from '@/context/UserSettingsContext';
 import { ALBION_CITIES, ENCHANTMENTS, MARKET_SERVER_REGIONS, QUALITIES, TIERS } from '@/data/constants';
+import { resolveSelectedItemVariant } from '@/data/itemCatalog';
 import { REGEAR_PRESETS, REGEAR_SLOT_DEFINITIONS } from '@/data/regearPresets';
 import { fetchItemPrices, searchCatalogItems } from '@/services/albionMarket';
 import type { AlbionCity, CityPrice, Enchantment, Item, ItemCatalogEntry, Quality, ServerRegion, Tier } from '@/types/albion';
@@ -51,12 +55,21 @@ import {
   formatCityName,
   formatEnchantment,
   formatQuality,
-  formatRelativeTime,
   formatServerName,
   formatSilver,
   formatTierEnchant,
 } from '@/lib/utils';
 import { serverParamToRegion } from '@/lib/settingsStorage';
+import { getUserEntitlements } from '@/src/lib/entitlements';
+import { todayStamp } from '@/src/services/proService';
+import {
+  createRegearBuild,
+  deleteRegearBuild,
+  findRegearBuildByName,
+  listRegearBuilds,
+  updateRegearBuild,
+  type SavedRegearBuild,
+} from '@/src/services/regearBuildsService';
 
 type RegearLineResult = {
   slotId: RegearSlotId;
@@ -119,6 +132,14 @@ function createInitialSlots(): RegearSlotForm[] {
   }));
 }
 
+function mergeSlotsWithDefaults(items: RegearSlotForm[]): RegearSlotForm[] {
+  return createInitialSlots().map((slot) => {
+    const savedSlot = items.find((item) => item.slotId === slot.slotId);
+
+    return savedSlot ? { ...slot, ...savedSlot } : slot;
+  });
+}
+
 function createSlotsFromPreset(preset: RegearPreset): RegearSlotForm[] {
   return createInitialSlots().map((slot) => {
     const presetSlot = preset.slots.find((item) => item.slotId === slot.slotId);
@@ -133,13 +154,78 @@ function createSlotsFromPreset(preset: RegearPreset): RegearSlotForm[] {
   });
 }
 
+function serializeBuildState(name: string, server: ServerRegion, slots: RegearSlotForm[]) {
+  return JSON.stringify({
+    name: name.trim(),
+    server,
+    slots: slots.map(({ slotId, query, selectedUniqueName, tier, enchantment, quality, quantity }) => ({
+      slotId,
+      query,
+      selectedUniqueName,
+      tier,
+      enchantment,
+      quality,
+      quantity,
+    })),
+  });
+}
+
+function buildExportText(buildName: string, slots: RegearSlotForm[], checklist = false): string {
+  const lines = [`Nome da Build: ${buildName.trim() || 'Sem nome'}`, ''];
+
+  for (const definition of REGEAR_SLOT_DEFINITIONS) {
+    const slot = slots.find((item) => item.slotId === definition.id);
+
+    if (!slot || !slot.query.trim() || slot.quantity <= 0) continue;
+
+    const item = slot.selectedUniqueName ? searchCatalogItems(slot.selectedUniqueName, {}, 1)[0] ?? null : null;
+    const itemName = item?.baseNamePtBR ?? item?.namePtBR ?? slot.query.trim();
+    const quantityLabel = slot.quantity > 1 ? ` x${slot.quantity}` : '';
+    const line = `${itemName} ${formatTierEnchant(slot.tier, slot.enchantment)}${quantityLabel}`;
+
+    lines.push(checklist ? `[ ] ${line}` : `${definition.label}: ${line}`);
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+function downloadTextFile(fileName: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function makeCopyBuildName(name: string, builds: SavedRegearBuild[]): string {
+  const baseName = `${name.trim() || 'Build'} (cópia)`;
+  const existingNames = new Set(builds.map((build) => build.name));
+
+  if (!existingNames.has(baseName)) return baseName;
+
+  let copyIndex = 2;
+  let candidate = `${baseName} ${copyIndex}`;
+
+  while (existingNames.has(candidate)) {
+    copyIndex += 1;
+    candidate = `${baseName} ${copyIndex}`;
+  }
+
+  return candidate;
+}
+
 function getSlotDefinition(slotId: RegearSlotId): RegearSlotDefinition {
   return REGEAR_SLOT_DEFINITIONS.find((slot) => slot.id === slotId) ?? REGEAR_SLOT_DEFINITIONS[0]!;
 }
 
 function getCandidateForSlot(slot: RegearSlotForm, definition: RegearSlotDefinition): ItemCatalogEntry | null {
   if (slot.selectedUniqueName) {
-    return searchCatalogItems(slot.selectedUniqueName, {}, 1)[0] ?? null;
+    const selectedItem = searchCatalogItems(slot.selectedUniqueName, {}, 1)[0] ?? null;
+
+    return selectedItem ? resolveSelectedItemVariant(selectedItem, slot.tier, slot.enchantment) : null;
   }
 
   return (
@@ -222,7 +308,10 @@ function purchaseModeLabel(mode: RegearPurchaseMode): string {
 }
 
 export default function RegearPage() {
+  const { user } = useAuth();
   const { settings } = useUserSettings();
+  const entitlements = React.useMemo(() => getUserEntitlements(user), [user]);
+  const isPro = entitlements.savedRegearBuilds > 1;
   const [serverOverride, setServerOverride] = React.useState<ServerRegion | null>(null);
   const [preferredCity, setPreferredCity] = React.useState<AlbionCity | 'all'>('all');
   const [purchaseMode, setPurchaseMode] = React.useState<RegearPurchaseMode>('optimized');
@@ -231,9 +320,43 @@ export default function RegearPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [activePresetId, setActivePresetId] = React.useState<string>(REGEAR_PRESETS[0]!.id);
+  const [savedBuilds, setSavedBuilds] = React.useState<SavedRegearBuild[]>([]);
+  const [buildName, setBuildName] = React.useState('Meu regear');
+  const [currentBuildId, setCurrentBuildId] = React.useState<string | null>(null);
+  const [isSavingBuild, setIsSavingBuild] = React.useState(false);
+  const [buildStatusMessage, setBuildStatusMessage] = React.useState('');
+  const [lastSavedSnapshot, setLastSavedSnapshot] = React.useState('');
+  const [playersCount, setPlayersCount] = React.useState(1);
   const server = serverOverride ?? serverParamToRegion(settings.defaultServer);
 
   const filledSlots = slots.filter((slot) => slot.query.trim().length > 0 && slot.quantity > 0);
+  const savedBuildsLimit = entitlements.savedRegearBuilds;
+  const canCreateAnotherBuild = savedBuilds.length < savedBuildsLimit;
+  const currentBuildSnapshot = React.useMemo(
+    () => serializeBuildState(buildName, server, slots),
+    [buildName, server, slots],
+  );
+  const isBuildDirty = currentBuildSnapshot !== lastSavedSnapshot;
+
+  React.useEffect(() => {
+    let isActive = true;
+
+    if (!user) return () => {
+      isActive = false;
+    };
+
+    void listRegearBuilds(user.id)
+      .then((builds) => {
+        if (isActive) setSavedBuilds(builds);
+      })
+      .catch(() => {
+        if (isActive) setSavedBuilds([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [user]);
 
   const updateSlot = React.useCallback((slotId: RegearSlotId, patch: Partial<RegearSlotForm>) => {
     setSlots((current) =>
@@ -247,13 +370,17 @@ export default function RegearPage() {
       ),
     );
     setResult(null);
+    setBuildStatusMessage('');
   }, []);
 
   const applyPreset = React.useCallback((preset: RegearPreset) => {
     setActivePresetId(preset.id);
     setSlots(createSlotsFromPreset(preset));
+    setCurrentBuildId(null);
+    setLastSavedSnapshot('');
     setResult(null);
     setErrorMessage('');
+    setBuildStatusMessage('');
   }, []);
 
   const calculateRegear = async () => {
@@ -350,6 +477,241 @@ export default function RegearPage() {
       setIsLoading(false);
     }
   };
+
+  const blockNewBuildCreation = () => {
+    setErrorMessage(
+      isPro
+        ? 'Limite de 20 builds salvas atingido.'
+        : 'O plano Free permite salvar 1 build. O PRO libera até 20 builds.',
+    );
+  };
+
+  const syncSavedBuild = (savedBuild: SavedRegearBuild) => {
+    const mergedSlots = mergeSlotsWithDefaults(savedBuild.items);
+
+    setCurrentBuildId(savedBuild.id);
+    setBuildName(savedBuild.name);
+    setServerOverride(savedBuild.server);
+    setSlots(mergedSlots);
+    setSavedBuilds((current) => [savedBuild, ...current.filter((build) => build.id !== savedBuild.id)]);
+    setLastSavedSnapshot(serializeBuildState(savedBuild.name, savedBuild.server, mergedSlots));
+  };
+
+  const saveNewBuild = async (options?: {
+    name?: string;
+    sourceSlots?: RegearSlotForm[];
+    sourceServer?: ServerRegion;
+    successMessage?: string;
+  }) => {
+    if (!user) {
+      setErrorMessage('Entre na sua conta para salvar builds.');
+      return;
+    }
+
+    const nextName = (options?.name ?? buildName).trim();
+    const nextSlots = options?.sourceSlots ?? slots;
+    const nextServer = options?.sourceServer ?? server;
+
+    if (!nextName) {
+      setErrorMessage('Informe um nome para a build.');
+      return;
+    }
+
+    setIsSavingBuild(true);
+    setBuildStatusMessage('');
+
+    try {
+      const duplicatedBuild = await findRegearBuildByName(user.id, nextName);
+
+      if (duplicatedBuild) {
+        const shouldOverwrite = window.confirm('Já existe uma build com esse nome. Deseja sobrescrever essa build?');
+
+        if (!shouldOverwrite) return;
+
+        const savedBuild = await updateRegearBuild(duplicatedBuild.id, {
+          name: nextName,
+          server: nextServer,
+          items: nextSlots,
+        });
+
+        syncSavedBuild(savedBuild);
+        setErrorMessage('');
+        setBuildStatusMessage('Build existente atualizada.');
+        return;
+      }
+
+      if (savedBuilds.length >= savedBuildsLimit) {
+        blockNewBuildCreation();
+        return;
+      }
+
+      const savedBuild = await createRegearBuild({
+        name: nextName,
+        server: nextServer,
+        items: nextSlots,
+      });
+
+      syncSavedBuild(savedBuild);
+      setErrorMessage('');
+      setBuildStatusMessage(options?.successMessage ?? 'Build salva com sucesso.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível salvar a build.');
+    } finally {
+      setIsSavingBuild(false);
+    }
+  };
+
+  const updateCurrentBuild = async () => {
+    if (!currentBuildId) {
+      await saveNewBuild();
+      return;
+    }
+
+    setIsSavingBuild(true);
+    setBuildStatusMessage('');
+
+    try {
+      if (!buildName.trim()) {
+        setErrorMessage('Informe um nome para a build.');
+        return;
+      }
+
+      const savedBuild = await updateRegearBuild(currentBuildId, {
+        name: buildName.trim(),
+        server,
+        items: slots,
+      });
+
+      syncSavedBuild(savedBuild);
+      setErrorMessage('');
+      setBuildStatusMessage('Build atualizada com sucesso.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível salvar a build.');
+    } finally {
+      setIsSavingBuild(false);
+    }
+  };
+
+  const saveCurrentAsNew = async () => {
+    await saveNewBuild({
+      name: `${buildName.trim() || 'Build'} (cópia)`,
+      sourceSlots: slots,
+      sourceServer: server,
+      successMessage: 'Build salva como nova.',
+    });
+  };
+
+  const applySavedBuild = (build: SavedRegearBuild) => {
+    const mergedSlots = mergeSlotsWithDefaults(build.items);
+
+    setCurrentBuildId(build.id);
+    setBuildName(build.name);
+    setServerOverride(build.server);
+    setSlots(mergedSlots);
+    setResult(null);
+    setErrorMessage('');
+    setBuildStatusMessage('Build carregada.');
+    setLastSavedSnapshot(serializeBuildState(build.name, build.server, mergedSlots));
+  };
+
+  const duplicateBuild = async (build: SavedRegearBuild) => {
+    if (savedBuilds.length >= savedBuildsLimit) {
+      blockNewBuildCreation();
+      return;
+    }
+
+    try {
+      const savedBuild = await createRegearBuild({
+        name: makeCopyBuildName(build.name, savedBuilds),
+        server: build.server,
+        items: mergeSlotsWithDefaults(build.items),
+      });
+
+      syncSavedBuild(savedBuild);
+      setBuildStatusMessage('Build duplicada.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível duplicar a build.');
+    }
+  };
+
+  const renameSavedBuild = async (build: SavedRegearBuild) => {
+    const nextName = window.prompt('Novo nome da build:', build.name)?.trim();
+
+    if (!nextName || nextName === build.name) return;
+
+    const duplicatedName = savedBuilds.find((item) => item.id !== build.id && item.name === nextName);
+
+    if (duplicatedName) {
+      setErrorMessage('Já existe uma build salva com esse nome.');
+      return;
+    }
+
+    try {
+      const savedBuild = await updateRegearBuild(build.id, { name: nextName });
+
+      setSavedBuilds((current) =>
+        current.map((item) => (item.id === savedBuild.id ? savedBuild : item)),
+      );
+
+      if (currentBuildId === savedBuild.id) {
+        setBuildName(savedBuild.name);
+        setLastSavedSnapshot(serializeBuildState(savedBuild.name, server, slots));
+      }
+
+      setErrorMessage('');
+      setBuildStatusMessage('Build renomeada.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível renomear a build.');
+    }
+  };
+
+  const removeSavedBuild = async (buildId: string) => {
+    try {
+      await deleteRegearBuild(buildId);
+      setSavedBuilds((current) => current.filter((build) => build.id !== buildId));
+      if (currentBuildId === buildId) {
+        setCurrentBuildId(null);
+        setLastSavedSnapshot('');
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível excluir a build.');
+    }
+  };
+
+  const clearBuild = React.useCallback(() => {
+    if (!window.confirm('Limpar a build atual?')) return;
+
+    setCurrentBuildId(null);
+    setBuildName('Meu regear');
+    setSlots(createInitialSlots());
+    setResult(null);
+    setErrorMessage('');
+    setBuildStatusMessage('Build limpa. Salve para persistir.');
+    setLastSavedSnapshot('');
+  }, []);
+
+  const copyBuildList = React.useCallback(async () => {
+    try {
+      await window.navigator.clipboard.writeText(buildExportText(buildName, slots));
+      setBuildStatusMessage('Lista copiada para a área de transferência.');
+    } catch {
+      setErrorMessage('Não foi possível copiar a lista.');
+    }
+  }, [buildName, slots]);
+
+  const copyBuildChecklist = React.useCallback(async () => {
+    try {
+      await window.navigator.clipboard.writeText(buildExportText(buildName, slots, true));
+      setBuildStatusMessage('Checklist de compra copiado.');
+    } catch {
+      setErrorMessage('Não foi possível copiar o checklist.');
+    }
+  }, [buildName, slots]);
+
+  const downloadBuildTxt = React.useCallback(() => {
+    downloadTextFile(`albion-build-${todayStamp()}.txt`, buildExportText(buildName, slots));
+    setBuildStatusMessage('Arquivo TXT gerado.');
+  }, [buildName, slots]);
 
   return (
     <div className="space-y-8">
@@ -469,15 +831,75 @@ export default function RegearPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        {slots.map((slot) => (
-          <SlotEditor
-            key={slot.slotId}
-            slot={slot}
-            definition={getSlotDefinition(slot.slotId)}
-            onChange={(patch) => updateSlot(slot.slotId, patch)}
-          />
-        ))}
+      <BuildEditorPaperDoll
+        buildName={buildName}
+        slots={slots}
+        isEditingSavedBuild={Boolean(currentBuildId)}
+        isDirty={isBuildDirty}
+        isSaving={isSavingBuild}
+        savedBuildsCount={savedBuilds.length}
+        savedBuildsLimit={savedBuildsLimit}
+        canSaveAsNew={canCreateAnotherBuild}
+        statusMessage={buildStatusMessage}
+        onBuildNameChange={(name) => {
+          setBuildName(name);
+          setBuildStatusMessage('');
+        }}
+        onSlotChange={updateSlot}
+        onCreateNew={() => void saveNewBuild()}
+        onUpdate={() => void updateCurrentBuild()}
+        onSaveAsNew={() => void saveCurrentAsNew()}
+        onNewBuild={clearBuild}
+        onCopyList={() => void copyBuildList()}
+        onCopyChecklist={() => void copyBuildChecklist()}
+        onDownloadTxt={downloadBuildTxt}
+      />
+
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-4 shadow-xl">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 font-black text-white">
+              <PackageCheck className="text-brand-primary" size={18} />
+              Minhas builds
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Free salva 1 build. PRO salva até 20. Carregue, renomeie, duplique ou exclua suas builds.
+            </p>
+          </div>
+          <Badge variant="muted">Builds salvas: {savedBuilds.length}/{savedBuildsLimit}</Badge>
+        </div>
+
+        {!isPro && savedBuilds.length >= 1 && !currentBuildId ? (
+          <div className="mt-3 rounded-lg border border-brand-primary/20 bg-brand-primary/10 px-3 py-2 text-xs font-bold text-brand-primary">
+            PRO libera até 20 builds salvas.
+          </div>
+        ) : null}
+
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {savedBuilds.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-border-subtle bg-zinc-950/70 p-3 text-sm text-zinc-500 md:col-span-2 xl:col-span-4">
+              Nenhuma build salva ainda.
+            </p>
+          ) : null}
+          {savedBuilds.map((build) => (
+            <article
+              key={build.id}
+              className={cn(
+                'rounded-lg border border-border-subtle bg-zinc-950 p-3',
+                currentBuildId === build.id && 'border-brand-primary/60 bg-brand-primary/10',
+              )}
+            >
+              <h3 className="truncate font-black text-white">{build.name}</h3>
+              <p className="mt-1 text-xs text-zinc-500">{formatServerName(build.server)} · {build.items.filter((item) => item.query).length} itens</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => applySavedBuild(build)} className="secondary-button">Carregar</button>
+                <button type="button" onClick={() => void renameSavedBuild(build)} className="secondary-button">Renomear</button>
+                <button type="button" onClick={() => void duplicateBuild(build)} className="secondary-button">Duplicar</button>
+                <button type="button" onClick={() => void removeSavedBuild(build.id)} className="danger-button">Excluir</button>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="flex flex-col gap-4 rounded-lg border border-border-subtle bg-bg-card p-5 shadow-2xl lg:flex-row lg:items-center lg:justify-between">
@@ -487,15 +909,27 @@ export default function RegearPage() {
             {filledSlots.length} peça(s) preenchida(s). Mercado Negro fica fora do cálculo padrão de regear.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void calculateRegear()}
-          disabled={isLoading || filledSlots.length === 0}
-          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-brand-primary px-5 text-sm font-black text-bg-dark transition-colors hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Calculator size={18} />}
-          {isLoading ? 'Calculando custo...' : 'Calcular custo do set'}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <label className="flex items-center gap-2 rounded-lg border border-border-subtle bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300">
+            Jogadores
+            <input
+              type="number"
+              min={1}
+              value={playersCount}
+              onChange={(event) => setPlayersCount(Math.max(1, Number(event.target.value) || 1))}
+              className="h-8 w-20 rounded-md border border-border-subtle bg-bg-card px-2 text-white outline-none"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void calculateRegear()}
+            disabled={isLoading || filledSlots.length === 0}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-brand-primary px-5 text-sm font-black text-bg-dark transition-colors hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Calculator size={18} />}
+            {isLoading ? 'Calculando custo...' : 'Calcular custo do set'}
+          </button>
+        </div>
       </section>
 
       {errorMessage ? (
@@ -506,35 +940,14 @@ export default function RegearPage() {
 
       {result ? <RegearResult result={result} /> : null}
 
-      <section className="rounded-lg border border-brand-primary/25 bg-brand-primary/10 p-5">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-black text-brand-primary">
-              <Crown size={20} />
-              Recursos Pro em breve para Regear
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-300">
-              Monetização futura focada em ferramenta, análise e conveniência. Nada de venda de prata, itens por dinheiro real ou RMT.
-            </p>
-          </div>
-          <Badge variant="primary">Em breve</Badge>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            'Salvar builds',
-            'Duplicar sets',
-            'Compartilhar link do set',
-            'Histórico de custo',
-            'Alerta de set mais barato',
-            'Cálculo para múltiplos jogadores',
-            'Regear para guildas',
-            'Exportar lista de compras',
-          ].map((feature) => (
-            <div key={feature} className="rounded-lg border border-brand-primary/20 bg-zinc-950/60 px-3 py-3 text-sm font-bold text-zinc-300">
-              {feature}
-            </div>
-          ))}
-        </div>
+      <section className="rounded-lg border border-brand-primary/25 bg-brand-primary/10 p-4">
+        <h2 className="flex items-center gap-2 font-black text-brand-primary">
+          <Crown size={18} />
+          Regear PRO funcional
+        </h2>
+        <p className="mt-2 text-sm text-zinc-300">
+          Builds salvas, duplicação, comparação por cidade, múltiplos jogadores e exportação TXT/checklist já estão conectados.
+        </p>
       </section>
     </div>
   );
@@ -737,7 +1150,7 @@ function RegearResult({ result }: { result: RegearCalculationResult }) {
           title="Confiança dos dados"
           value={confidenceLabel(result.confidence)}
           icon={ShieldCheck}
-          description={`Calculado em ${formatRelativeTime(result.calculatedAt)}`}
+          description={<RelativeTime date={result.calculatedAt} prefix="Calculado em" />}
         />
         <StatCard
           title="Itens sem preço recente"
@@ -799,7 +1212,7 @@ function RegearResult({ result }: { result: RegearCalculationResult }) {
                   <td className="px-5 py-4">
                     <span className="inline-flex items-center gap-2 text-sm text-zinc-400">
                       <Clock3 size={14} className="text-zinc-600" />
-                      {line.bestPrice?.updatedAt ? `Atualizado ${formatRelativeTime(line.bestPrice.updatedAt)}` : 'Sem atualização'}
+                      {line.bestPrice?.updatedAt ? <RelativeTime date={line.bestPrice.updatedAt} prefix="Atualizado" /> : 'Sem atualização'}
                     </span>
                   </td>
                   <td className="px-5 py-4">
@@ -882,3 +1295,4 @@ function SelectField({ label, children }: { label: string; children: React.React
     </label>
   );
 }
+

@@ -4,6 +4,7 @@ export type AlbionItemCatalogEntry = {
   uniqueName: string;
   namePtBR: string;
   nameEn?: string;
+  localizedNames?: Record<string, string>;
   familyId?: string;
   baseNamePtBR?: string;
   baseNameEn?: string;
@@ -17,6 +18,7 @@ export type AlbionItemCatalogEntry = {
   iconUrl?: string;
   defaultQuality?: Quality;
   itemPower?: string;
+  searchText?: string;
 };
 
 export type ItemAliasRule = {

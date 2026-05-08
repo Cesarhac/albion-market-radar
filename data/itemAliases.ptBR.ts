@@ -3,22 +3,22 @@ import type { ItemAliasRule } from '@/types/items';
 export const itemAliasesPtBR: ItemAliasRule[] = [
   {
     uniqueNamePattern: '^T[4-8]_MAIN_RAPIER_MORGANA(@[1-4])?$',
-    aliases: ['dessangra', 'dessangrador', 'bloodletter', 'bl'],
+    aliases: ['Dessangra', 'dessangra', 'dessangrador', 'Bloodletter', 'bloodletter', 'bl'],
     preferredNamePtBR: 'Dessangra',
     note: 'Bloodletter e conhecida pela comunidade BR como Dessangra.',
   },
   {
     uniqueNamePattern: '^T[4-8]_2H_DUALSICKLE_UNDEAD(@[1-4])?$',
-    aliases: ['mortificus', 'mortíficus', 'deathgivers', 'deathgiver', 'morti'],
+    aliases: ['Mortíficos', 'Mortificos', 'Mortíficus', 'mortificus', 'Deathgivers', 'deathgivers', 'deathgiver', 'morti'],
     note: 'UniqueName validado no dump: Deathgivers usa 2H_DUALSICKLE_UNDEAD.',
   },
   {
     uniqueNamePattern: '^T[3-8]_POTION_HEAL$',
-    aliases: ['pocao de cura', 'poção de cura', 'pot de cura', 'healing potion', 'heal potion'],
+    aliases: ['Poção de Cura', 'Pocao de Cura', 'pocao de cura', 'pot de cura', 'Healing Potion', 'healing potion', 'heal potion'],
   },
   {
     uniqueNamePattern: '^T[2-8]_BAG$',
-    aliases: ['mochila', 'bag'],
+    aliases: ['Mochila', 'mochila', 'Bag', 'bag'],
   },
   {
     uniqueName: 'T4_BAG',
@@ -39,6 +39,10 @@ export const itemAliasesPtBR: ItemAliasRule[] = [
   {
     uniqueNamePattern: '^T[4-8]_2H_HOLYSTAFF$',
     aliases: ['cajado sagrado', 'holy staff', 'cajado holy'],
+  },
+  {
+    uniqueNamePattern: '^T[4-8]_2H_SHAPESHIFTER_AVALON(@[1-4])?$',
+    aliases: ['cajado invocador da luz', 'invocador da luz', 'lightcaller'],
   },
   {
     uniqueNamePattern: '^T[3-8]_MEAL_OMELETTE$',

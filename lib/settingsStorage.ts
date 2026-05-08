@@ -18,8 +18,11 @@ const VALID_INTERVALS = [5, 10, 30, 60];
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   defaultServer: 'americas',
   marketTax: 6.5,
+  hasAlbionPremium: false,
   mainCity: 'Bridgewatch',
   updateInterval: 10,
+  interfaceDensity: 'comfortable',
+  browserNotificationsEnabled: false,
   darkTheme: true,
   currency: 'prata',
 };
@@ -29,16 +32,22 @@ export function mergeWithDefaultSettings(partialSettings: Partial<UserSettings> 
   const marketTax = Number(partialSettings?.marketTax);
   const updateInterval = Number(partialSettings?.updateInterval);
   const mainCity = partialSettings?.mainCity;
+  const interfaceDensity = partialSettings?.interfaceDensity === 'compact' ? 'compact' : 'comfortable';
+  const browserNotificationsEnabled = partialSettings?.browserNotificationsEnabled === true;
+  const hasAlbionPremium = partialSettings?.hasAlbionPremium === true;
 
   return {
     defaultServer: serverToParam(defaultServer),
     marketTax: Number.isFinite(marketTax) && marketTax >= 0 && marketTax <= 30
       ? marketTax
       : DEFAULT_USER_SETTINGS.marketTax,
+    hasAlbionPremium,
     mainCity: mainCity && VALID_CITIES.includes(mainCity) ? mainCity : DEFAULT_USER_SETTINGS.mainCity,
     updateInterval: VALID_INTERVALS.includes(updateInterval)
       ? updateInterval
       : DEFAULT_USER_SETTINGS.updateInterval,
+    interfaceDensity,
+    browserNotificationsEnabled,
     darkTheme:
       typeof partialSettings?.darkTheme === 'boolean'
         ? partialSettings.darkTheme

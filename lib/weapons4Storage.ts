@@ -59,23 +59,34 @@ export function updateWeapon4Listing(
 }
 
 function normalizeWeapon4Listing(listing: Weapon4Listing): Weapon4Listing {
+  const isAwakened = Boolean(listing.awakened ?? listing.isAwakened);
   const sellerPlayerName =
     normalizeOptionalString(listing.sellerPlayerName) ??
     normalizeOptionalString(listing.sellerName) ??
     'Vendedor não informado';
   const screenshots = Array.isArray(listing.screenshots) ? listing.screenshots : [];
   const traits = Array.isArray(listing.traits) ? listing.traits : [];
+  const traitTags = Array.isArray(listing.traitTags) ? listing.traitTags : [];
   const useCases = Array.isArray(listing.useCases) ? listing.useCases : [];
+  const investedCost = normalizeOptionalNumber(listing.investedCost ?? listing.estimatedInvestment);
 
   return {
     ...listing,
     enchantment: 4,
-    type: listing.isAwakened ? 'awakened' : 'standard-4',
+    type: isAwakened ? 'awakened' : 'standard-4',
+    isAwakened,
+    awakened: isAwakened,
     sellerName: sellerPlayerName,
     sellerPlayerName,
     sellerContact: normalizeOptionalString(listing.sellerContact),
+    discordUsername: normalizeOptionalString(listing.discordUsername),
+    discordUserId: normalizeOptionalString(listing.discordUserId),
+    discordInviteUrl: normalizeOptionalString(listing.discordInviteUrl),
     safetyAcceptedAt: normalizeDate(listing.safetyAcceptedAt, listing.createdAt),
-    traits: listing.isAwakened ? traits : [],
+    traits: isAwakened ? traits : [],
+    traitTags: Array.from(new Set(traitTags.map((tag) => normalizeOptionalString(tag)).filter(Boolean) as string[])),
+    investedCost,
+    estimatedInvestment: investedCost,
     screenshots: screenshots.filter(Boolean),
     useCases: Array.from(new Set(useCases)),
   };
@@ -114,6 +125,12 @@ function normalizeStoredWeapon4Listing(value: unknown): Weapon4Listing | null {
 
 function normalizeOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeOptionalNumber(value: unknown): number | undefined {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
 }
 
 function normalizeDate(value: unknown, fallback?: unknown): string {

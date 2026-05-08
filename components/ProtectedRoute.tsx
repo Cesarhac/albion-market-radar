@@ -22,7 +22,7 @@ const PROTECTED_PREFIXES = [
   '/trader',
   '/weapons',
   '/regear',
-  '/favorites',
+  '/alerts',
   '/settings',
   '/chat',
   '/profile',

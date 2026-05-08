@@ -1,18 +1,21 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, MessageCircle, Send, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Clock3, MessageCircle, Send, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import { useAuth } from '@/context/AuthContext';
 import {
   type ChatChannel,
   type ChatMessage,
+  filterFreshChatMessages,
   fetchChatMessages,
+  isFreshChatMessage,
   reportChatMessage,
   sendChatMessage,
   subscribeToChatMessages,
 } from '@/src/lib/supabase/database';
-import { cn, formatRelativeTime } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const CHANNELS: ChatChannel[] = ['Global', 'Américas', 'Europa', 'Mercado', 'Armas .4', 'Regear', 'Dúvidas'];
 const MAX_MESSAGE_LENGTH = 300;
@@ -51,15 +54,42 @@ export default function ChatPage() {
     void loadMessages();
 
     const subscription = subscribeToChatMessages(channel, (message) => {
+      if (!isFreshChatMessage(message) || message.status !== 'visible') return;
+
       setMessages((current) => {
         if (current.some((item) => item.id === message.id)) return current;
-        return [...current, message].slice(-100);
+        return filterFreshChatMessages([...current, message]).slice(-100);
       });
     });
 
     return () => {
       isActive = false;
       if (subscription) void subscription.unsubscribe();
+    };
+  }, [channel]);
+
+  React.useEffect(() => {
+    let isActive = true;
+
+    const refreshVisibleMessages = async () => {
+      setMessages((current) => filterFreshChatMessages(current));
+
+      try {
+        const nextMessages = await fetchChatMessages(channel);
+
+        if (isActive) setMessages(nextMessages);
+      } catch {
+        // Realtime remains the primary path; the periodic refresh is best effort.
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshVisibleMessages();
+    }, 30_000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
     };
   }, [channel]);
 
@@ -97,7 +127,7 @@ export default function ChatPage() {
       lastSentAtRef.current = Date.now();
       setMessages((current) => {
         if (current.some((item) => item.id === message.id)) return current;
-        return [...current, message].slice(-100);
+        return filterFreshChatMessages([...current, message]).slice(-100);
       });
       setContent('');
     } catch (error) {
@@ -130,9 +160,23 @@ export default function ChatPage() {
         </Badge>
         <h1 className="mt-3 text-3xl font-black text-white md:text-5xl">Chat</h1>
         <p className="mt-3 max-w-3xl text-sm leading-relaxed text-zinc-400 md:text-base">
-          Converse com outros jogadores usando seu nome do Albion. Mensagens são salvas no Supabase e o realtime fica preparado para novas mensagens.
+          Converse com outros jogadores usando seu nome do Albion. Mensagens somem após 5 minutos.
         </p>
       </header>
+
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-4 shadow-xl">
+        <div className="grid gap-3 md:grid-cols-[auto_1fr] md:items-start">
+          <div className="inline-flex rounded-md border border-brand-primary/20 bg-brand-primary/10 p-2 text-brand-primary">
+            <Clock3 size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-black text-white">Mensagens somem após 5 minutos.</p>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+              Não compartilhe senha, não compre/venda prata por dinheiro real, cuidado com golpes. O site não intermedia negociações.
+            </p>
+          </div>
+        </div>
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-[240px_1fr]">
         <aside className="rounded-lg border border-border-subtle bg-bg-card p-3 shadow-2xl">
@@ -191,7 +235,7 @@ export default function ChatPage() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="font-black text-white">{message.playerName}</p>
-                    <p className="text-xs font-bold text-zinc-600">{formatRelativeTime(message.createdAt)}</p>
+                    <p className="text-xs font-bold text-zinc-600"><RelativeTime date={message.createdAt} /></p>
                   </div>
                   <button
                     type="button"
@@ -221,7 +265,7 @@ export default function ChatPage() {
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="flex items-start gap-2 text-xs font-bold leading-relaxed text-zinc-500">
                 <ShieldAlert className="mt-0.5 shrink-0 text-status-warning" size={14} />
-                Não compartilhe senhas, links suspeitos ou ofertas de RMT.
+                Não compartilhe senha, não compre/venda prata por dinheiro real, cuidado com golpes. O site não intermedia negociações.
               </p>
               <button
                 type="submit"

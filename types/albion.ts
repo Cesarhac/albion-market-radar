@@ -35,21 +35,46 @@ export type RiskLevel = 'low' | 'medium' | 'high';
 
 export type UpdateStatus = 'updated' | 'medium' | 'outdated';
 
-export type MarketDataSource = 'live' | 'mock';
+export type MarketDataSource = 'live' | 'cache' | 'mock';
 
-export type OpportunityType = 'quick-sale' | 'listed-resale';
+export type OpportunityType = 'black-market' | 'quick-sale' | 'listed-resale' | 'underpriced';
 
 export type OpportunityConfidence = 'high' | 'medium' | 'low';
 
 export type OpportunitySortBy = 'score' | 'profit' | 'margin' | 'recent' | 'investment';
+export type OpportunityWatchlistMode = 'basic' | 'extended';
+export type OpportunityScanDepth =
+  | 'basic'
+  | 'pro'
+  | 'deep'
+  | 'quick_basic'
+  | 'quick_pro'
+  | 'quick_deep'
+  | 'black_market_basic'
+  | 'black_market_pro'
+  | 'black_market_deep';
+export type OpportunityQuickProfile = 'safe' | 'wide';
+export type OpportunityBlackMarketProfile = 'safe' | 'wide' | 'high_profit' | 'low_risk';
+export type EstimatedLiquidity = 'alta' | 'média' | 'baixa' | 'desconhecida';
 
 export type OpportunityScoreLabel = 'excellent' | 'good' | 'medium' | 'weak';
+export type OpportunityWorthLevel = 'excelente' | 'boa' | 'fraca' | 'micro' | 'suspeita';
 
 export type ListingStatus = 'available' | 'reserved' | 'sold';
 
 export type SubscriptionPlan = 'free' | 'pro';
 
-export type SubscriptionStatus = 'free' | 'active' | 'past_due' | 'canceled';
+export type SubscriptionStatus =
+  | 'free'
+  | 'active'
+  | 'trialing'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'inactive'
+  | 'paused';
 
 export type UserAccount = {
   id: string;
@@ -61,7 +86,12 @@ export type UserAccount = {
   server: ServerParam;
   plan: SubscriptionPlan;
   subscriptionStatus: SubscriptionStatus;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripePriceId?: string;
+  subscriptionCurrentPeriodEnd?: string;
   createdAt: string;
+  updatedAt?: string;
   lastLoginAt: string;
 };
 
@@ -109,6 +139,7 @@ export interface Item {
   baseNameEn?: string;
   baseNamePtBR?: string;
   resolvedFromUniqueName?: string;
+  localizedNames?: Record<string, string>;
   aliases: string[];
   tier: Tier;
   enchantment: Enchantment;
@@ -133,6 +164,7 @@ export interface ItemCatalogEntry {
   baseNameEn?: string;
   baseNamePtBR?: string;
   resolvedFromUniqueName?: string;
+  localizedNames?: Record<string, string>;
   aliases: string[];
   tier: Tier;
   enchantment: Enchantment;
@@ -142,6 +174,7 @@ export interface ItemCatalogEntry {
   itemPower?: string;
   marketable?: boolean;
   iconUrl?: string;
+  searchText?: string;
 }
 
 export interface Opportunity {
@@ -159,15 +192,28 @@ export interface Opportunity {
   buyPrice: number;
   sellPrice: number;
   sellPriceReference?: 'buy-order' | 'sell-order';
+  blackMarketBuyPrice?: number;
+  blackMarketUpdatedAt?: string;
+  blackMarketAgeHours?: number;
+  estimatedLiquidity?: EstimatedLiquidity;
+  estimatedLiquidityReasons?: string[];
+  quantityAvailableLabel?: string;
+  quantityAvailableSource?: 'api' | 'not_provided';
+  taxRateApplied?: number;
   grossProfit: number;
   estimatedTax: number;
   netProfit: number;
+  netProfitPerUnit?: number;
   margin: number;
   roi?: number;
   investment?: number;
   suggestedQuantity?: number;
   estimatedInvestment?: number;
   estimatedNetProfit?: number;
+  isMicroFlip?: boolean;
+  microFlipReasons?: string[];
+  worthLevel?: OpportunityWorthLevel;
+  worthReasons?: string[];
   score?: number;
   scoreLabel?: OpportunityScoreLabel;
   scoreReasons?: string[];
@@ -205,7 +251,7 @@ export interface FavoriteItem {
 
 export interface UserSettings {
   defaultServer: ServerRegion;
-  marketTaxRate: number;
+  hasAlbionPremium: boolean;
   mainCity: AlbionCity;
   updateIntervalMinutes: number;
   darkTheme: boolean;
@@ -269,11 +315,18 @@ export interface Weapon4Listing {
   notes?: string;
   type: Weapon4ListingType;
   isAwakened: boolean;
+  awakened?: boolean;
+  awakenedLevel?: number;
   itemPower?: string;
   traits: Weapon4Trait[];
+  traitTags?: string[];
   attunementPoints?: string;
+  investedCost?: number;
   estimatedInvestment?: number;
   buildNotes?: string;
+  discordUsername?: string;
+  discordUserId?: string;
+  discordInviteUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -304,11 +357,70 @@ export interface OpportunityFilters {
   category?: ItemCategory | 'all';
   type?: OpportunityType | 'all';
   budget?: number;
+  minEstimatedProfit?: number;
   includeBlackMarket?: boolean;
   includeLowConfidence?: boolean;
   includeSuspicious?: boolean;
+  includeMicroFlips?: boolean;
+  blackMarketFreshOnly?: boolean;
+  blackMarketMaxAgeHours?: number;
   sortBy?: OpportunitySortBy;
+  watchlistMode?: OpportunityWatchlistMode;
+  minConfidence?: OpportunityConfidence | 'all';
+  plan?: SubscriptionPlan;
+  scanDepth?: OpportunityScanDepth;
+  selectedPreset?: string;
+  quickProfile?: OpportunityQuickProfile;
+  blackMarketProfile?: OpportunityBlackMarketProfile;
 }
+
+export type OpportunityRejectionReasons = {
+  noPriceData: number;
+  noSellPrice: number;
+  noBuyPrice: number;
+  sameCity: number;
+  negativeProfit: number;
+  belowMinProfit: number;
+  belowMinMargin: number;
+  tooOld: number;
+  suspicious: number;
+  microFlip: number;
+  invalidItemId: number;
+  belowEstimatedProfit: number;
+  lowConfidence: number;
+  highRisk: number;
+  weakOpportunity: number;
+  staleBlackMarketData: number;
+};
+
+export type OpportunityRadarDebug = {
+  server: ServerParam;
+  plan: SubscriptionPlan;
+  scanDepth: OpportunityScanDepth;
+  selectedMode: OpportunityType | 'all';
+  selectedPreset?: string;
+  quickProfile?: OpportunityQuickProfile;
+  blackMarketProfile?: OpportunityBlackMarketProfile;
+  watchlistSource?: string;
+  fallbackReason?: string;
+  requestedItemIdsCount: number;
+  validItemIdsCount: number;
+  staticCatalogItemsCount?: number;
+  apiReturnedRows: number;
+  fetchErrors?: string[];
+  itemsWithAnyPrice: number;
+  itemsWithSellPrice: number;
+  itemsWithBuyPrice: number;
+  rawCandidatesCount: number;
+  afterPositiveProfitCount: number;
+  afterMinProfitCount: number;
+  afterMinMarginCount: number;
+  afterAgeFilterCount: number;
+  afterSuspiciousFilterCount: number;
+  afterMicroFlipFilterCount: number;
+  finalOpportunitiesCount: number;
+  rejectionReasons: OpportunityRejectionReasons;
+};
 
 export interface ProfitBreakdown {
   grossProfit: number;
@@ -359,8 +471,11 @@ export interface MarketOpportunitiesResponse extends MarketResponseMeta {
   opportunities: Opportunity[];
   monitoredItemIds: string[];
   analyzedItems?: number;
+  evaluatedRoutes?: number;
+  displayedOpportunities?: number;
   analyzedAt?: string;
   filters?: OpportunityFilters;
+  debug?: OpportunityRadarDebug;
 }
 
 export interface MarketHistoryResponse extends MarketResponseMeta {

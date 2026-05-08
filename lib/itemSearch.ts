@@ -1,4 +1,4 @@
-import generatedCatalog from '@/data/itemCatalog.generated.json';
+import generatedCatalog from '@/src/data/itemCatalog.full.json';
 import { itemAliasesPtBR } from '@/data/itemAliases.ptBR';
 import type { Enchantment, ItemCatalogEntry, ItemCategory, Quality, Tier } from '@/types/albion';
 import type { AlbionItemCatalogEntry, ItemSearchFilters } from '@/types/items';
@@ -30,11 +30,18 @@ const SEARCHABLE_CATEGORIES: ItemCategory[] = [
   'Itens',
 ];
 
-const catalog = buildCatalog();
-const catalogByUniqueName = new Map(catalog.map((item) => [item.uniqueName.toUpperCase(), item]));
+const fullCatalog = buildCatalog();
+const fullCatalogByUniqueName = new Map(fullCatalog.map((item) => [item.uniqueName.toUpperCase(), item]));
 
-export const itemCatalog = catalog;
+export const itemCatalog = fullCatalog;
 export const ITEM_CATEGORIES = SEARCHABLE_CATEGORIES;
+
+export async function loadItemCatalog(): Promise<ItemCatalogEntry[]> {
+  const catalogModule = await import('@/src/data/itemCatalog.full.json');
+  return (catalogModule.default as AlbionItemCatalogEntry[]).length === (generatedCatalog as AlbionItemCatalogEntry[]).length
+    ? fullCatalog
+    : buildCatalog(catalogModule.default as AlbionItemCatalogEntry[]);
+}
 
 export function normalizeSearchTerm(value: string) {
   return value
@@ -54,14 +61,14 @@ export function compactSearchTerm(value: string) {
 export function searchItems(
   query: string,
   filters: ItemSearchFilters = {},
-  limit = 12,
+  limit = 20,
 ): ItemCatalogEntry[] {
   const normalizedQuery = normalizeSearchTerm(query);
   const compactQuery = compactSearchTerm(query);
   const hasQuery = normalizedQuery.length > 0;
   const seen = new Set<string>();
 
-  return catalog
+  return fullCatalog
     .filter((item) => catalogItemMatchesSearchFilters(item, filters))
     .map((item) => ({ item, score: scoreItem(item, normalizedQuery, compactQuery, hasQuery) }))
     .filter(({ score }) => score < 999)
@@ -88,13 +95,17 @@ export function findCatalogItemByQuery(
 export function findCatalogItemsByQuery(
   query: string,
   filters: ItemSearchFilters = {},
-  limit = 8,
+  limit = 20,
 ): ItemCatalogEntry[] {
   return searchItems(query, filters, limit);
 }
 
 export function findCatalogItemByUniqueName(uniqueName: string): ItemCatalogEntry | null {
-  return catalogByUniqueName.get(uniqueName.trim().toUpperCase()) ?? null;
+  return fullCatalogByUniqueName.get(uniqueName.trim().toUpperCase()) ?? null;
+}
+
+export function getItemCatalog(): ItemCatalogEntry[] {
+  return fullCatalog;
 }
 
 export function catalogItemMatchesFilters(item: ItemCatalogEntry, filters: ItemSearchFilters = {}) {
@@ -128,6 +139,14 @@ export function buildItemUniqueName(
   const base = `T${tier}_${familyId}`;
 
   return enchantment > 0 ? `${base}@${enchantment}` : base;
+}
+
+export function buildEquipmentUniqueName(
+  familyId: string,
+  tier: Tier,
+  enchantment: Enchantment,
+): string {
+  return buildItemUniqueName(familyId, tier, enchantment);
 }
 
 export function getDisplayItemTierLabel(tier: Tier, enchantment: Enchantment): string {
@@ -167,7 +186,7 @@ export function resolveItemVariation(
   }
 
   const uniqueName = buildItemUniqueName(item.uniqueName, requestedTier, requestedEnchantment);
-  const exactVariant = catalogByUniqueName.get(uniqueName.toUpperCase());
+  const exactVariant = fullCatalogByUniqueName.get(uniqueName.toUpperCase());
 
   if (exactVariant) {
     return mergeResolvedVariant(exactVariant, item);
@@ -191,6 +210,8 @@ export function resolveItemVariation(
   );
 }
 
+export const resolveSelectedItemVariant = resolveItemVariation;
+
 export function getCatalogSearchText(item: ItemCatalogEntry) {
   return [
     item.itemId,
@@ -203,14 +224,16 @@ export function getCatalogSearchText(item: ItemCatalogEntry) {
     item.category,
     item.subcategory ?? '',
     item.itemPower ?? '',
+    item.searchText ?? '',
+    ...Object.values(item.localizedNames ?? {}),
     ...item.aliases,
   ]
     .map(normalizeSearchTerm)
     .join(' ');
 }
 
-function buildCatalog(): ItemCatalogEntry[] {
-  return (generatedCatalog as AlbionItemCatalogEntry[])
+function buildCatalog(source: AlbionItemCatalogEntry[] = generatedCatalog as AlbionItemCatalogEntry[]): ItemCatalogEntry[] {
+  return source
     .map(normalizeGeneratedEntry)
     .filter((item): item is ItemCatalogEntry => Boolean(item))
     .map(applyAliasRules)
@@ -244,6 +267,8 @@ function normalizeGeneratedEntry(entry: AlbionItemCatalogEntry): ItemCatalogEntr
     itemPower: entry.itemPower,
     marketable: entry.marketable ?? true,
     iconUrl: entry.iconUrl,
+    localizedNames: entry.localizedNames,
+    searchText: entry.searchText,
   };
 }
 

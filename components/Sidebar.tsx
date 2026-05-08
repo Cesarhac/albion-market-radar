@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Crown,
+  Bell,
   LayoutDashboard,
   Menu,
   MessageCircle,
@@ -12,14 +13,15 @@ import {
   Radar,
   Search,
   Settings,
-  Star,
   Sword,
   Wallet,
   X,
   Zap,
 } from 'lucide-react';
+import { useAlerts } from '@/context/AlertsContext';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
+import { isActiveProProfile } from '@/src/lib/entitlements';
 
 const navItems = [
   { name: 'Painel', href: '/', icon: LayoutDashboard },
@@ -29,8 +31,8 @@ const navItems = [
   { name: 'Carteira', href: '/trader', icon: Wallet },
   { name: 'Armas .4', href: '/weapons', icon: Sword },
   { name: 'Chat', href: '/chat', icon: MessageCircle },
-  { name: 'Favoritos', href: '/favorites', icon: Star },
-  { name: 'Pro em breve', href: '/pro', icon: Crown },
+  { name: 'Alertas', href: '/alerts', icon: Bell },
+  { name: 'PRO', href: '/pro', icon: Crown },
   { name: 'Configurações', href: '/settings', icon: Settings },
 ];
 
@@ -42,8 +44,10 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
+  const { triggeredAlertCount } = useAlerts();
   const [isOpen, setIsOpen] = React.useState(false);
   const visibleNavItems = isAuthenticated ? navItems : publicNavItems;
+  const isProActive = isActiveProProfile(user);
 
   const handleLogout = () => {
     logout();
@@ -85,6 +89,8 @@ export function Sidebar() {
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
           {visibleNavItems.map((item) => {
             const isActive = pathname === item.href;
+            const isProItem = item.href === '/pro';
+            const isAlertsItem = item.href === '/alerts';
 
             return (
               <Link
@@ -95,13 +101,24 @@ export function Sidebar() {
                   isActive
                     ? 'border border-brand-primary/25 bg-brand-primary/10 text-brand-primary'
                     : 'text-zinc-400 hover:bg-zinc-900 hover:text-white',
+                  isProItem && !isActive && 'border border-brand-primary/20 bg-brand-primary/5 text-brand-primary hover:bg-brand-primary/10',
                 )}
               >
                 <item.icon
                   size={19}
                   className={cn(isActive ? 'text-brand-primary' : 'text-zinc-500 group-hover:text-white')}
                 />
-                {item.name}
+                <span className="min-w-0 flex-1">{item.name}</span>
+                {isProItem ? (
+                  <span className="rounded-md border border-brand-primary/30 bg-brand-primary/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-brand-primary">
+                    {isProActive ? 'PRO ativo' : 'PRO'}
+                  </span>
+                ) : null}
+                {isAlertsItem && triggeredAlertCount > 0 ? (
+                  <span className="rounded-md border border-status-warning/30 bg-status-warning/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-status-warning">
+                    {triggeredAlertCount}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

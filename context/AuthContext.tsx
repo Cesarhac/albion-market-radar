@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
-import type { AlbionPlayerLookup, ServerParam, SubscriptionPlan, UserAccount } from '@/types/albion';
+import type { AlbionPlayerLookup, ServerParam, UserAccount } from '@/types/albion';
 import { normalizeEmail, normalizePlayerName } from '@/lib/authStorage';
 import {
   ensureUserSettings,
@@ -29,7 +29,7 @@ type AuthOperationResult = {
   lookup: AlbionPlayerLookup;
 };
 
-type UpdateProfileInput = Partial<Pick<UserAccount, 'email' | 'playerName' | 'server' | 'plan' | 'subscriptionStatus'>>;
+type UpdateProfileInput = Partial<Pick<UserAccount, 'email' | 'playerName' | 'server'>>;
 
 type AuthContextValue = {
   user: UserAccount | null;
@@ -41,7 +41,6 @@ type AuthContextValue = {
   logout: () => Promise<void>;
   updateProfile: (data: UpdateProfileInput) => Promise<AuthOperationResult>;
   refreshAlbionPlayerData: (playerName: string) => Promise<AlbionPlayerLookup>;
-  setDevelopmentPlan: (plan: SubscriptionPlan) => Promise<UserAccount>;
 };
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -342,8 +341,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         guildName: lookup.guildName,
         allianceName: lookup.allianceName,
         server: data.server ?? currentUser.server,
-        plan: data.plan ?? currentUser.plan,
-        subscriptionStatus: data.subscriptionStatus ?? currentUser.subscriptionStatus,
+        plan: currentUser.plan,
+        subscriptionStatus: currentUser.subscriptionStatus,
       });
 
       setUser(nextUser);
@@ -351,18 +350,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { user: nextUser, lookup };
     },
     [refreshAlbionPlayerData, user],
-  );
-
-  const setDevelopmentPlan = React.useCallback(
-    async (plan: SubscriptionPlan) => {
-      const result = await updateProfile({
-        plan,
-        subscriptionStatus: plan === 'pro' ? 'active' : 'free',
-      });
-
-      return result.user;
-    },
-    [updateProfile],
   );
 
   const value = React.useMemo(
@@ -376,7 +363,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       updateProfile,
       refreshAlbionPlayerData,
-      setDevelopmentPlan,
     }),
     [
       configurationError,
@@ -385,7 +371,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refreshAlbionPlayerData,
       registerUser,
-      setDevelopmentPlan,
       updateProfile,
       user,
     ],

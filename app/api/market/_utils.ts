@@ -6,16 +6,24 @@ import {
   serverToParam,
 } from '@/lib/marketData';
 
+export class AlbionDataApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly url: string,
+  ) {
+    super(message);
+    this.name = 'AlbionDataApiError';
+  }
+}
+
 export async function fetchAlbionDataPrices(
   itemIds: string[],
   server: ServerRegion,
   qualityIds: number[],
   locations: AlbionCity[] = ALBION_CITIES,
 ): Promise<AlbionDataPriceResponse[]> {
-  const url = buildAlbionDataUrl('/api/v2/stats/prices', itemIds, server);
-
-  url.searchParams.set('locations', locations.join(','));
-  url.searchParams.set('qualities', qualityIds.join(','));
+  const url = buildAlbionDataPricesUrl(itemIds, server, qualityIds, locations);
 
   const payload = await fetchAlbionJson(url);
 
@@ -24,6 +32,20 @@ export async function fetchAlbionDataPrices(
   }
 
   return payload.filter(isAlbionDataPriceResponse);
+}
+
+export function buildAlbionDataPricesUrl(
+  itemIds: string[],
+  server: ServerRegion,
+  qualityIds: number[],
+  locations: AlbionCity[] = ALBION_CITIES,
+): URL {
+  const url = buildAlbionDataUrl('/api/v2/stats/prices', itemIds, server);
+
+  url.searchParams.set('locations', locations.join(','));
+  url.searchParams.set('qualities', qualityIds.join(','));
+
+  return url;
 }
 
 export async function fetchAlbionDataHistory(
@@ -66,7 +88,11 @@ async function fetchAlbionJson(url: URL): Promise<unknown> {
   });
 
   if (!response.ok) {
-    throw new Error(`Albion Online Data Project respondeu com status ${response.status}`);
+    throw new AlbionDataApiError(
+      `Albion Online Data Project respondeu com status ${response.status}`,
+      response.status,
+      url.toString(),
+    );
   }
 
   return response.json();

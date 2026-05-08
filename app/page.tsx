@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { SearchBar } from '@/components/SearchBar';
 import { Badge } from '@/components/ui/Badge';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import { StatCard } from '@/components/ui/StatCard';
 import { ENCHANTMENTS, MARKET_SERVER_REGIONS, TIERS } from '@/data/constants';
 import { mockOpportunities } from '@/data/mockOpportunities';
@@ -31,7 +32,6 @@ import {
   formatDateTime,
   formatEnchantment,
   formatPercent,
-  formatRelativeTime,
   formatServerName,
   formatSilver,
   riskLabel,
@@ -253,7 +253,7 @@ export default function PainelPage() {
         />
         <StatCard
           title="Dados atualizados recentemente"
-          value={formatRelativeTime(latestUpdate.updatedAt)}
+          value={<RelativeTime date={latestUpdate.updatedAt} />}
           icon={Clock3}
           description={formatDateTime(latestUpdate.updatedAt)}
         />
@@ -325,7 +325,7 @@ export default function PainelPage() {
                       </Badge>
                     </td>
                     <td className="px-5 py-4 text-xs text-zinc-500">
-                      Atualizado {formatRelativeTime(opportunity.updatedAt)}
+                      <RelativeTime date={opportunity.updatedAt} prefix="Atualizado" />
                     </td>
                   </tr>
                 ))}
@@ -383,10 +383,10 @@ export default function PainelPage() {
           <div className="rounded-lg border border-brand-primary/20 bg-brand-primary/10 p-5">
             <h3 className="flex items-center gap-2 font-black text-brand-primary">
               <Bell size={18} />
-              Recursos Pro em breve
+              Recursos PRO ativos
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-zinc-300">
-              Alertas de preço, alertas no Discord, rotas salvas, filtros avançados e exportação CSV.
+              Filtros avançados, CSV, alertas internos, builds salvas, relatórios e interface compacta.
             </p>
           </div>
 

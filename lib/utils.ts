@@ -5,7 +5,6 @@ import type {
   Enchantment,
   Item,
   ServerRegion,
-  ProfitBreakdown,
   Quality,
   RiskLevel,
   Tier,
@@ -74,29 +73,6 @@ export function getUpdateStatus(updatedAt: string | number | Date): UpdateStatus
   if (minutes <= 120) return 'updated';
   if (minutes <= 720) return 'medium';
   return 'outdated';
-}
-
-export function calculateNetProfit(buyPrice: number, sellPrice: number, taxRate: number): number {
-  const estimatedTax = sellPrice * (taxRate / 100);
-  return sellPrice - buyPrice - estimatedTax;
-}
-
-export function calculateProfitBreakdown(
-  buyPrice: number,
-  sellPrice: number,
-  taxRate: number,
-): ProfitBreakdown {
-  const grossProfit = sellPrice - buyPrice;
-  const estimatedTax = sellPrice * (taxRate / 100);
-  const netProfit = grossProfit - estimatedTax;
-  const margin = buyPrice > 0 ? (netProfit / buyPrice) * 100 : 0;
-
-  return {
-    grossProfit,
-    estimatedTax,
-    netProfit,
-    margin,
-  };
 }
 
 export function riskLabel(risk: RiskLevel): string {

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Sidebar } from '@/components/Sidebar';
+import { AlertsProvider } from '@/context/AlertsContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { UserSettingsProvider } from '@/context/UserSettingsContext';
 import './globals.css';
@@ -31,14 +32,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="bg-bg-dark text-zinc-100 antialiased" suppressHydrationWarning>
         <AuthProvider>
           <UserSettingsProvider>
-            <div className="min-h-screen lg:flex">
-              <Sidebar />
-              <main className="min-w-0 flex-1 lg:pl-64">
-                <div className="mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 lg:px-8 lg:py-8">
-                  <ProtectedRoute>{children}</ProtectedRoute>
-                </div>
-              </main>
-            </div>
+            <AlertsProvider>
+              <div className="min-h-screen lg:flex">
+                <Sidebar />
+                <main className="min-w-0 flex-1 lg:pl-64">
+                  <div className="mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 lg:px-8 lg:py-8">
+                    <ProtectedRoute>{children}</ProtectedRoute>
+                  </div>
+                </main>
+              </div>
+            </AlertsProvider>
           </UserSettingsProvider>
         </AuthProvider>
       </body>

@@ -16,6 +16,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import { StatCard } from '@/components/ui/StatCard';
 import { useUserSettings } from '@/context/UserSettingsContext';
 import {
@@ -45,14 +46,12 @@ import {
   getItemBaseDisplayName,
 } from '@/data/itemCatalog';
 import {
-  calculateProfitBreakdown,
   cn,
   formatCityName,
   formatDateTime,
   formatEnchantment,
   formatPercent,
   formatQuality,
-  formatRelativeTime,
   formatServerName,
   formatSilver,
   formatTierEnchant,
@@ -63,6 +62,11 @@ import {
 } from '@/lib/utils';
 import { normalizeServerParam } from '@/lib/marketData';
 import { serverParamToRegion } from '@/lib/settingsStorage';
+import {
+  calculateInstantSellProfitBreakdown,
+  getSellOrderTotalFeeRate,
+  getTransactionTaxRate,
+} from '@/src/lib/albionTaxes';
 
 type TierFilter = Tier | 'all';
 type EnchantmentFilter = Enchantment | 'all';
@@ -110,29 +114,39 @@ function SearchContent() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [notFound, setNotFound] = React.useState(false);
+  const [debouncedQuery, setDebouncedQuery] = React.useState(initialItem);
   const didRunInitialSearch = React.useRef(false);
   const server = serverOverride ?? initialServer ?? serverParamToRegion(settings.defaultServer);
-  const marketTaxRate = settings.marketTax;
+  const hasAlbionPremium = settings.hasAlbionPremium;
+  const transactionTaxRate = getTransactionTaxRate(hasAlbionPremium);
+  const sellOrderTotalFeeRate = getSellOrderTotalFeeRate(hasAlbionPremium);
+
+  React.useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedQuery(query), 180);
+
+    return () => window.clearTimeout(timeout);
+  }, [query]);
 
   const suggestions = React.useMemo(
     () =>
       searchCatalogItems(
-        query,
+        debouncedQuery,
         {
           category,
           tier,
           enchantment,
         },
-        8,
+        20,
       ),
-    [category, enchantment, query, tier],
+    [category, debouncedQuery, enchantment, tier],
   );
 
   const selectedItem = selectedCatalogItem ?? suggestions[0] ?? null;
 
   const runSearch = React.useCallback(
     async (candidate: ItemCatalogEntry | null = selectedItem, serverOverride: ServerRegion = server) => {
-      const itemToSearch = candidate ?? searchCatalogItems(query, { category, tier, enchantment }, 1)[0] ?? null;
+      const itemToSearch =
+        candidate ?? searchCatalogItems(query, { category, tier, enchantment }, 1)[0] ?? null;
 
       if (!itemToSearch) {
         setNotFound(true);
@@ -191,18 +205,21 @@ function SearchContent() {
           <div className="space-y-2">
             <Badge variant="primary" className="gap-2">
               <Search size={13} />
-              Busca avançada de mercado
+              Catálogo completo de itens
             </Badge>
             <h1 className="text-3xl font-black text-white">Buscar item</h1>
             <p className="max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Pesquise por nome em português, nome em inglês, Item ID, alias da comunidade ou categoria. Escolha o
-              servidor e consulte preços reais por cidade.
+              Busque por nome em português, inglês ou Item ID. Depois de encontrar o item, o radar consulta preços
+              reais por servidor e cidade.
             </p>
           </div>
 
           <div className="text-sm text-zinc-500">
-            Taxa considerada:{' '}
-            <span className="font-black text-brand-primary">{formatPercent(marketTaxRate)}</span>
+            <span className="font-black text-brand-primary">
+              {hasAlbionPremium ? 'Premium ativo' : 'Sem Premium'}
+            </span>
+            <span className="ml-2">Venda rápida: {formatPercent(transactionTaxRate * 100)}</span>
+            <span className="ml-2">Revenda anunciada: {formatPercent(sellOrderTotalFeeRate * 100)}</span>
           </div>
         </div>
 
@@ -388,7 +405,7 @@ function SearchContent() {
           <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-zinc-950/60 px-4 py-3 text-xs leading-relaxed text-zinc-500 md:flex-row md:items-center md:justify-between">
             <div>
               <span className="font-bold text-zinc-300">Fonte:</span> Albion Online Data Project.
-              <span className="ml-1">Atualizado conforme dados públicos disponíveis.</span>
+              <span className="ml-1">Os preços dependem dos dados públicos disponíveis.</span>
             </div>
             <div className="rounded-md border border-brand-primary/40 bg-brand-primary/10 px-3 py-2 font-bold text-brand-primary">
               Servidor atual: {formatServerName(server)}
@@ -406,7 +423,7 @@ function SearchContent() {
       {!isLoading && notFound ? (
         <WarningPanel
           title="Item não encontrado"
-          message="Nenhum item encontrado. Tente buscar pelo nome em português, inglês, alias da comunidade ou ID do item."
+          message="Nenhum item encontrado no catálogo. Tente buscar pelo nome em português, inglês ou Item ID."
         />
       ) : null}
 
@@ -425,7 +442,7 @@ function SearchContent() {
           item={result}
           server={server}
           cityFilter={city}
-          marketTaxRate={marketTaxRate}
+          hasAlbionPremium={hasAlbionPremium}
         />
       ) : null}
     </div>
@@ -494,13 +511,15 @@ function MarketResultSection({
   item,
   server,
   cityFilter,
-  marketTaxRate,
+  hasAlbionPremium,
 }: {
   item: Item;
   server: ServerRegion;
   cityFilter: CityFilter;
-  marketTaxRate: number;
+  hasAlbionPremium: boolean;
 }) {
+  const transactionTaxRate = getTransactionTaxRate(hasAlbionPremium);
+  const sellOrderTotalFeeRate = getSellOrderTotalFeeRate(hasAlbionPremium);
   const pricesForCalculation = item.prices;
   const visiblePrices = cityFilter === 'all' ? item.prices : item.prices.filter((price) => price.city === cityFilter);
   const bestBuy = pricesForCalculation
@@ -511,7 +530,7 @@ function MarketResultSection({
     .sort((a, b) => b.buyPriceMax - a.buyPriceMax)[0];
   const profit =
     bestBuy && bestSell
-      ? calculateProfitBreakdown(bestBuy.sellPriceMin, bestSell.buyPriceMax, marketTaxRate)
+      ? calculateInstantSellProfitBreakdown(bestBuy.sellPriceMin, bestSell.buyPriceMax, hasAlbionPremium)
       : null;
   const generalUpdate = item.prices
     .filter((price) => price.updatedAt)
@@ -567,8 +586,14 @@ function MarketResultSection({
                   <span className="font-mono">{item.sourceHost}</span>
                 </p>
                 <p>
-                  <span className="font-bold text-zinc-300">Taxa considerada:</span>{' '}
-                  {formatPercent(marketTaxRate)}
+                  <span className="font-bold text-zinc-300">
+                    {hasAlbionPremium ? 'Premium ativo' : 'Sem Premium'}:
+                  </span>{' '}
+                  Venda rápida: taxa de transação {formatPercent(transactionTaxRate * 100)}
+                </p>
+                <p>
+                  <span className="font-bold text-zinc-300">Revenda anunciada:</span>{' '}
+                  {formatPercent(sellOrderTotalFeeRate * 100)} incluindo setup
                 </p>
                 <p>
                   <span className="font-bold text-zinc-300">Última atualização geral:</span>{' '}
@@ -583,7 +608,7 @@ function MarketResultSection({
           <div className="rounded-lg border border-border-subtle bg-bg-card p-5 shadow-2xl md:p-6">
             <h3 className="flex items-center gap-2 text-lg font-black text-white">
               <TrendingUp className="text-brand-primary" size={20} />
-              {profit.netProfit > 0 ? 'Melhor rota comercial' : 'Sem oportunidade lucrativa'}
+              {profit.netProfit > 0 ? 'Melhor rota comercial: Venda rápida' : 'Sem oportunidade lucrativa'}
             </h3>
             <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-lg bg-zinc-950 p-4">
               <div>
@@ -602,7 +627,7 @@ function MarketResultSection({
         ) : (
           <WarningPanel
             title="Dados insuficientes para calcular arbitragem"
-            message="Encontramos parte dos preços, mas falta ordem de venda ou ordem de compra suficiente para calcular uma rota."
+            message="Encontramos parte dos preços, mas falta preço público suficiente para calcular uma venda rápida."
           />
         )}
       </div>
@@ -632,7 +657,7 @@ function MarketResultSection({
             value={formatSilver(profit.netProfit)}
             icon={Calculator}
             trend={{ value: formatPercent(profit.margin), isPositive: profit.netProfit > 0 }}
-            description={`${formatSilver(profit.estimatedTax)} de taxa estimada (${formatPercent(marketTaxRate)})`}
+            description={`Venda rápida: ${formatSilver(profit.estimatedTax)} de taxa de transação (${formatPercent(transactionTaxRate * 100)})`}
           />
           <StatCard
             title="Risco da oportunidade"
@@ -722,7 +747,7 @@ function PriceTable({
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2 text-sm text-zinc-400">
                         <Clock3 size={14} className="text-zinc-600" />
-                        {price.updatedAt ? `Atualizado ${formatRelativeTime(price.updatedAt)}` : 'Sem atualização'}
+                        {price.updatedAt ? <RelativeTime date={price.updatedAt} prefix="Atualizado" /> : 'Sem atualização'}
                       </div>
                     </td>
                     <td className="px-5 py-4">
@@ -751,3 +776,4 @@ export default function SearchPage() {
     </Suspense>
   );
 }
+

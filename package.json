@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "sync:items": "tsx scripts/sync-albion-items.ts",
+    "validate:items": "tsx scripts/validate-item-catalog.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
@@ -16,6 +18,7 @@
     "next": "16.2.4",
     "react": "19.2.5",
     "react-dom": "19.2.5",
+    "stripe": "^22.1.0",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
@@ -28,6 +31,7 @@
     "eslint-config-next": "16.2.4",
     "postcss": "8.5.12",
     "tailwindcss": "4.1.11",
+    "tsx": "^4.21.0",
     "typescript": "5.9.3"
   },
   "overrides": {

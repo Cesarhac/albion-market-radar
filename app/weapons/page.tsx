@@ -8,26 +8,30 @@ import {
   BarChart3,
   CheckCircle2,
   Coins,
+  Copy,
   Edit3,
   Eye,
   Filter,
   ImagePlus,
   Info,
   Layers3,
+  LayoutGrid,
   MapPin,
-  MessageSquare,
   Plus,
   Search,
   ShieldAlert,
   Sparkles,
   Sword,
+  Table2,
   Trash2,
   WandSparkles,
   X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import { ProGate } from '@/components/ProGate';
 import { useAuth } from '@/context/AuthContext';
+import { useUserSettings } from '@/context/UserSettingsContext';
 import { ALBION_CITIES, MARKET_SERVER_REGIONS, QUALITIES } from '@/data/constants';
 import {
   buildItemUniqueName,
@@ -52,7 +56,6 @@ import {
   formatCityName,
   formatDateTime,
   formatQuality,
-  formatRelativeTime,
   formatServerName,
   formatSilver,
   formatTierEnchant,
@@ -82,6 +85,7 @@ type CityFilter = AlbionCity | 'all';
 type QualityFilter = Quality | 'all';
 type StatusFilter = ListingStatus | 'all';
 type UseCaseFilter = WeaponUseCase | 'all';
+type ListingsViewMode = 'cards' | 'table';
 
 type EvaluationState =
   | { status: 'idle' | 'loading' | 'no-data' | 'error'; label: 'Sem dados suficientes' }
@@ -107,6 +111,9 @@ interface Weapon4FormState {
   sellerPlayerId?: string;
   sellerServer?: 'americas' | 'europe';
   sellerContact: string;
+  discordUsername: string;
+  discordUserId: string;
+  discordInviteUrl: string;
   safetyAccepted: boolean;
   safetyAcceptedAt?: string;
   status: ListingStatus;
@@ -115,8 +122,10 @@ interface Weapon4FormState {
   screenshotsText: string;
   notes: string;
   isAwakened: boolean;
+  awakenedLevel: string;
   itemPower: string;
   traits: WeaponTraitFormState[];
+  traitTags: string;
   attunementPoints: string;
   estimatedInvestment: string;
   buildNotes: string;
@@ -169,6 +178,9 @@ const emptyForm: Weapon4FormState = {
   sellerPlayerId: undefined,
   sellerServer: undefined,
   sellerContact: '',
+  discordUsername: '',
+  discordUserId: '',
+  discordInviteUrl: '',
   safetyAccepted: false,
   safetyAcceptedAt: undefined,
   status: 'available',
@@ -177,8 +189,10 @@ const emptyForm: Weapon4FormState = {
   screenshotsText: '',
   notes: '',
   isAwakened: false,
+  awakenedLevel: '',
   itemPower: '',
   traits: [emptyTrait()],
+  traitTags: '',
   attunementPoints: '',
   estimatedInvestment: '',
   buildNotes: '',
@@ -199,7 +213,7 @@ function createEmptyForm(user?: UserAccount | null): Weapon4FormState {
 const statusLabel: Record<ListingStatus, string> = {
   available: 'Disponível',
   reserved: 'Reservado',
-  sold: 'Vendida',
+  sold: 'Vendido',
 };
 
 const typeLabel: Record<Weapon4ListingType, string> = {
@@ -219,8 +233,11 @@ const typeVariant = (type: Weapon4ListingType): 'primary' | 'info' => {
 
 export default function WeaponsPage() {
   const { user } = useAuth();
+  const { settings } = useUserSettings();
   const router = useRouter();
   const entitlements = React.useMemo(() => getUserEntitlements(user), [user]);
+  const isCompact = settings.interfaceDensity === 'compact';
+  const isPro = entitlements.maxWeaponListings > 3;
   const [listings, setListings] = React.useState<Weapon4Listing[]>([]);
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
@@ -237,8 +254,10 @@ export default function WeaponsPage() {
   const [maxPrice, setMaxPrice] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
   const [useCaseFilter, setUseCaseFilter] = React.useState<UseCaseFilter>('all');
+  const [listingsView, setListingsView] = React.useState<ListingsViewMode>('cards');
   const [successMessage, setSuccessMessage] = React.useState('');
   const [formErrorMessage, setFormErrorMessage] = React.useState('');
+  const userId = user?.id;
 
   React.useEffect(() => {
     let isActive = true;
@@ -269,11 +288,15 @@ export default function WeaponsPage() {
   }, []);
 
   const activeUserListings = React.useMemo(
-    () => listings.filter((listing) => listing.sellerUserId === user?.id && listing.status !== 'sold').length,
-    [listings, user?.id],
+    () => listings.filter((listing) => listing.sellerUserId === userId && listing.status !== 'sold').length,
+    [listings, userId],
   );
   const hasReachedListingLimit =
     Number.isFinite(entitlements.maxWeaponListings) && activeUserListings >= entitlements.maxWeaponListings;
+  const isListingOwner = React.useCallback(
+    (listing: Weapon4Listing) => Boolean(userId && listing.sellerUserId === userId),
+    [userId],
+  );
 
   const filteredListings = React.useMemo(() => {
     const query = normalizeSearchTerm(weaponFilter);
@@ -283,7 +306,7 @@ export default function WeaponsPage() {
     return listings
       .filter((listing) => {
         const searchText = normalizeSearchTerm(
-          `${listing.weaponName} ${listing.itemId ?? ''} ${getListingSellerName(listing)} ${listing.sellerContact ?? ''}`,
+          `${listing.weaponName} ${listing.itemId ?? ''} ${getListingSellerName(listing)} ${getListingSellerContact(listing)} ${(listing.traitTags ?? []).join(' ')}`,
         );
         const matchesWeapon = !query || searchText.includes(query);
         const matchesType = typeFilter === 'all' || listing.type === typeFilter;
@@ -341,6 +364,11 @@ export default function WeaponsPage() {
   };
 
   const openEditForm = (listing: Weapon4Listing) => {
+    if (!isListingOwner(listing)) {
+      setFormErrorMessage('Apenas o criador do anúncio pode editar.');
+      return;
+    }
+
     setEditingId(listing.id);
     setForm(formFromListing(listing));
     setIsFormOpen(true);
@@ -364,6 +392,11 @@ export default function WeaponsPage() {
     }
 
     const currentListing = editingId ? listings.find((listing) => listing.id === editingId) : undefined;
+
+    if (currentListing && !isListingOwner(currentListing)) {
+      setFormErrorMessage('Apenas o criador do anúncio pode editar.');
+      return;
+    }
 
     if (!currentListing && !user) {
       router.push('/login?reason=auth-required&next=/weapons');
@@ -396,7 +429,6 @@ export default function WeaponsPage() {
       setFormErrorMessage(error instanceof Error ? error.message : 'Não foi possível salvar o anúncio.');
       return;
     }
-    setSuccessMessage(editingId ? 'Anúncio atualizado.' : 'Arma .4 anunciada localmente.');
     closeForm();
   };
 
@@ -404,6 +436,33 @@ export default function WeaponsPage() {
     const currentListing = listings.find((listing) => listing.id === listingId);
 
     if (!currentListing) return;
+    if (!isListingOwner(currentListing)) {
+      setFormErrorMessage('Apenas o criador do anúncio pode alterar o status.');
+      return;
+    }
+
+    if (status === 'sold') {
+      const confirmed = window.confirm('Tem certeza que deseja marcar esta arma como vendida? O anúncio será removido.');
+
+      if (!confirmed) return;
+
+      const previousListings = listings;
+      const previousSelectedListing = selectedListing;
+      setListings((current) => current.filter((listing) => listing.id !== listingId));
+      setSelectedListing((current) => (current?.id === listingId ? null : current));
+
+      try {
+        await deleteWeaponListingFromSupabase(listingId, currentListing.sellerUserId ?? '');
+      } catch (error) {
+        setListings(previousListings);
+        setSelectedListing(previousSelectedListing);
+        setFormErrorMessage(error instanceof Error ? error.message : 'Não foi possível remover o anúncio vendido.');
+        return;
+      }
+
+      setSuccessMessage('Anúncio removido com sucesso.');
+      return;
+    }
 
     try {
       const nextListing = await updateWeaponListingInSupabase({
@@ -421,8 +480,20 @@ export default function WeaponsPage() {
   };
 
   const deleteListing = async (listingId: string) => {
+    const currentListing = listings.find((listing) => listing.id === listingId);
+
+    if (!currentListing) return;
+    if (!isListingOwner(currentListing)) {
+      setFormErrorMessage('Apenas o criador do anúncio pode excluir.');
+      return;
+    }
+
+    const confirmed = window.confirm('Tem certeza que deseja excluir este anúncio?');
+
+    if (!confirmed) return;
+
     try {
-      await deleteWeaponListingFromSupabase(listingId);
+      await deleteWeaponListingFromSupabase(listingId, currentListing.sellerUserId ?? '');
     } catch (error) {
       setFormErrorMessage(error instanceof Error ? error.message : 'Não foi possível excluir o anúncio.');
       return;
@@ -573,7 +644,7 @@ export default function WeaponsPage() {
               <option value="all">Todos</option>
               <option value="available">Disponível</option>
               <option value="reserved">Reservado</option>
-              <option value="sold">Vendida</option>
+              <option value="sold">Vendido</option>
             </select>
           </SelectField>
 
@@ -601,7 +672,33 @@ export default function WeaponsPage() {
                 {isLoaded ? `${filteredListings.length} de ${listings.length} anúncios no Supabase` : 'Carregando anúncios no Supabase'}
               </p>
             </div>
-            <Badge variant="outline">Supabase</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Supabase</Badge>
+              <div className="inline-flex rounded-lg border border-border-subtle bg-zinc-950 p-1">
+                <button
+                  type="button"
+                  onClick={() => setListingsView('cards')}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-black transition-colors',
+                    listingsView === 'cards' ? 'bg-brand-primary text-bg-dark' : 'text-zinc-400 hover:text-white',
+                  )}
+                >
+                  <LayoutGrid size={14} />
+                  Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setListingsView('table')}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-black transition-colors',
+                    listingsView === 'table' ? 'bg-brand-primary text-bg-dark' : 'text-zinc-400 hover:text-white',
+                  )}
+                >
+                  <Table2 size={14} />
+                  Tabela
+                </button>
+              </div>
+            </div>
           </div>
 
           {hasReachedListingLimit ? (
@@ -613,16 +710,31 @@ export default function WeaponsPage() {
 
           {filteredListings.length === 0 ? (
             <EmptyWeaponsState onCreate={openCreateForm} />
+          ) : listingsView === 'table' ? (
+            <WeaponListingsTable
+              listings={filteredListings}
+              isPro={isPro}
+              userId={userId}
+              onDetails={setSelectedListing}
+              onEdit={openEditForm}
+              onDelete={deleteListing}
+              onStatusChange={updateListingStatus}
+              onFeedback={setSuccessMessage}
+            />
           ) : (
-            <div className="grid gap-4 2xl:grid-cols-2">
+            <div className="grid gap-3">
               {filteredListings.map((listing) => (
                 <WeaponCard
                   key={listing.id}
                   listing={listing}
+                  canManage={isListingOwner(listing)}
+                  isProSeller={isPro && isListingOwner(listing)}
+                  compact={isCompact}
                   onDetails={setSelectedListing}
                   onEdit={openEditForm}
                   onDelete={deleteListing}
                   onStatusChange={updateListingStatus}
+                  onFeedback={setSuccessMessage}
                 />
               ))}
             </div>
@@ -663,10 +775,12 @@ export default function WeaponsPage() {
       {selectedListing ? (
         <WeaponDetailsModal
           listing={selectedListing}
+          canManage={isListingOwner(selectedListing)}
           onClose={() => setSelectedListing(null)}
           onEdit={openEditForm}
           onDelete={deleteListing}
           onStatusChange={updateListingStatus}
+          onFeedback={setSuccessMessage}
         />
       ) : null}
     </div>
@@ -675,24 +789,30 @@ export default function WeaponsPage() {
 
 function WeaponCard({
   listing,
+  canManage,
+  isProSeller,
+  compact,
   onDetails,
   onEdit,
   onDelete,
   onStatusChange,
+  onFeedback,
 }: {
   listing: Weapon4Listing;
+  canManage: boolean;
+  isProSeller: boolean;
+  compact: boolean;
   onDetails: (listing: Weapon4Listing) => void;
   onEdit: (listing: Weapon4Listing) => void;
   onDelete: (listingId: string) => void;
   onStatusChange: (listingId: string, status: ListingStatus) => void;
+  onFeedback: (message: string) => void;
 }) {
-  const visibleTraits = listing.traits.slice(0, 3);
-
   return (
-    <article className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card shadow-2xl transition-colors hover:border-brand-primary/35">
-      <WeaponVisual listing={listing} />
+    <article className="grid overflow-hidden rounded-lg border border-border-subtle bg-bg-card shadow-xl transition-colors hover:border-brand-primary/35 lg:grid-cols-[180px_minmax(0,1fr)]">
+      <WeaponVisual listing={listing} compact />
 
-      <div className="space-y-4 p-5">
+      <div className={cn('space-y-3', compact ? 'p-3' : 'p-4')}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h3 className="truncate text-xl font-black text-white">
@@ -701,24 +821,29 @@ function WeaponCard({
             <p className="mt-1 break-all font-mono text-xs text-zinc-500">{listing.itemId || 'uniqueName não informado'}</p>
           </div>
           <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Badge variant="primary">{formatTierEnchant(listing.tier, 4)}</Badge>
             <Badge variant={typeVariant(listing.type)}>{typeLabel[listing.type]}</Badge>
             <Badge variant={statusVariant(listing.status)}>{statusLabel[listing.status]}</Badge>
+            <Badge variant="outline">{formatQuality(listing.quality)}</Badge>
+            {listing.isAwakened ? <Badge variant="info">Despertada</Badge> : null}
+            {isProSeller ? <Badge variant="primary">Anúncio PRO</Badge> : null}
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <MiniMetric label="Qualidade" value={formatQuality(listing.quality)} />
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
           <MiniMetric label="Servidor" value={formatServerName(listing.server)} />
           <MiniMetric label="Cidade" value={formatCityName(listing.city)} />
           <MiniMetric label="Preço pedido" value={formatSilver(listing.askingPrice)} tone="brand" />
           <MiniMetric label="Vendedor" value={getListingSellerName(listing)} />
-          <MiniMetric label="Contato" value={getListingSellerContact(listing)} />
+          <div className="sm:col-span-2">
+            <SellerContactActions listing={listing} onFeedback={onFeedback} />
+          </div>
         </div>
 
-        <p className="flex items-start gap-2 rounded-lg border border-status-warning/15 bg-status-warning/5 p-3 text-xs font-bold leading-relaxed text-status-warning">
+        {!compact ? <p className="flex items-start gap-2 rounded-lg border border-status-warning/15 bg-status-warning/5 p-3 text-xs font-bold leading-relaxed text-status-warning">
           <ShieldAlert className="mt-0.5 shrink-0" size={14} />
           Negociação direta entre jogadores. Verifique tudo dentro do jogo.
-        </p>
+        </p> : null}
 
         {listing.useCases.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -728,16 +853,7 @@ function WeaponCard({
           </div>
         ) : null}
 
-        {visibleTraits.length > 0 ? (
-          <div className="rounded-lg border border-border-subtle bg-zinc-950 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">Traits principais</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {visibleTraits.map((trait) => (
-                <Badge key={trait.id} variant="info">{trait.name}</Badge>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <WeaponTraitHighlights listing={listing} />
 
         <WeaponEvaluationSummary listing={listing} />
 
@@ -746,33 +862,239 @@ function WeaponCard({
             <Eye size={15} />
             Ver detalhes
           </button>
-          <button type="button" onClick={() => onEdit(listing)} className="secondary-button">
-            <Edit3 size={15} />
-            Editar
-          </button>
-          <button
-            type="button"
-            onClick={() => onStatusChange(listing.id, 'reserved')}
-            className="secondary-button"
-            disabled={listing.status === 'reserved'}
-          >
-            Reservar
-          </button>
-          <button
-            type="button"
-            onClick={() => onStatusChange(listing.id, 'sold')}
-            className="secondary-button"
-            disabled={listing.status === 'sold'}
-          >
-            Marcar vendida
-          </button>
-          <button type="button" onClick={() => onDelete(listing.id)} className="danger-button">
-            <Trash2 size={15} />
-            Excluir
-          </button>
+          {canManage ? (
+            <>
+              <button type="button" onClick={() => onEdit(listing)} className="secondary-button">
+                <Edit3 size={15} />
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange(listing.id, 'reserved')}
+                className="secondary-button"
+                disabled={listing.status === 'reserved'}
+              >
+                Reservar
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange(listing.id, 'sold')}
+                className="secondary-button"
+                disabled={listing.status === 'sold'}
+              >
+                Marcar vendida
+              </button>
+              <button type="button" onClick={() => onDelete(listing.id)} className="danger-button">
+                <Trash2 size={15} />
+                Excluir
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
     </article>
+  );
+}
+
+function WeaponListingsTable({
+  listings,
+  isPro,
+  userId,
+  onDetails,
+  onEdit,
+  onDelete,
+  onStatusChange,
+  onFeedback,
+}: {
+  listings: Weapon4Listing[];
+  isPro: boolean;
+  userId?: string;
+  onDetails: (listing: Weapon4Listing) => void;
+  onEdit: (listing: Weapon4Listing) => void;
+  onDelete: (listingId: string) => void;
+  onStatusChange: (listingId: string, status: ListingStatus) => void;
+  onFeedback: (message: string) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card shadow-xl">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[940px] text-left text-sm">
+          <thead className="border-b border-border-subtle bg-zinc-950 text-[11px] uppercase tracking-wide text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">Item</th>
+              <th className="px-3 py-2">Traits principais</th>
+              <th className="px-3 py-2">Preço</th>
+              <th className="px-3 py-2">Cidade</th>
+              <th className="px-3 py-2">Vendedor</th>
+              <th className="px-3 py-2">Contato</th>
+              <th className="px-3 py-2 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
+            {listings.map((listing) => (
+              <tr key={listing.id} className="align-top hover:bg-zinc-950/45">
+                <td className="px-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border-subtle">
+                      <WeaponVisual listing={listing} compact />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-black text-white">{listing.weaponName}</p>
+                      <p className="mt-1 font-mono text-[11px] text-zinc-500">{listing.itemId || 'sem ID'}</p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <Badge variant="primary">{formatTierEnchant(listing.tier, 4)}</Badge>
+                        <Badge variant={statusVariant(listing.status)}>{statusLabel[listing.status]}</Badge>
+                        {isPro && listing.sellerUserId === userId ? <Badge variant="primary">PRO</Badge> : null}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="max-w-[260px] px-3 py-3">
+                  <WeaponTraitHighlights listing={listing} compact />
+                </td>
+                <td className="px-3 py-3 font-black text-brand-primary">{formatSilver(listing.askingPrice)}</td>
+                <td className="px-3 py-3 text-zinc-300">
+                  <p>{formatCityName(listing.city)}</p>
+                  <p className="text-xs text-zinc-500">{formatServerName(listing.server)}</p>
+                </td>
+                <td className="px-3 py-3 text-zinc-300">{getListingSellerName(listing)}</td>
+                <td className="px-3 py-3">
+                  <SellerContactActions listing={listing} onFeedback={onFeedback} compact />
+                </td>
+                <td className="px-3 py-3">
+                  <div className="flex justify-end gap-1.5">
+                    <button type="button" onClick={() => onDetails(listing)} className="icon-button" aria-label="Ver detalhes">
+                      <Eye size={14} />
+                    </button>
+                    {listing.sellerUserId === userId ? (
+                      <>
+                        <button type="button" onClick={() => onEdit(listing)} className="icon-button" aria-label="Editar">
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onStatusChange(listing.id, 'reserved')}
+                          className="secondary-button h-8 px-2 text-xs"
+                          disabled={listing.status === 'reserved'}
+                        >
+                          Reservar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onStatusChange(listing.id, 'sold')}
+                          className="secondary-button h-8 px-2 text-xs"
+                        >
+                          Vendido
+                        </button>
+                        <button type="button" onClick={() => onDelete(listing.id)} className="danger-button h-8 px-2 text-xs">
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function WeaponTraitHighlights({ listing, compact = false, expanded = false }: { listing: Weapon4Listing; compact?: boolean; expanded?: boolean }) {
+  const investedCost = getListingInvestedCost(listing);
+  const visibleTraits = expanded ? listing.traits : listing.traits.slice(0, 2);
+  const traitTags = listing.traitTags ?? [];
+  const hasHighlights =
+    listing.isAwakened ||
+    Boolean(listing.itemPower || listing.attunementPoints || investedCost || listing.awakenedLevel) ||
+    traitTags.length > 0 ||
+    visibleTraits.length > 0;
+
+  if (!hasHighlights) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-zinc-950 p-3 text-xs font-bold text-zinc-500">
+        Sem traits destacados
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('rounded-lg border border-status-info/20 bg-status-info/10 p-3', compact && 'p-2')}>
+      <div className="flex flex-wrap gap-1.5">
+        {listing.isAwakened ? <Badge variant="info">Despertada</Badge> : null}
+        {listing.awakenedLevel ? <Badge variant="outline">Nível {listing.awakenedLevel}</Badge> : null}
+        {listing.itemPower ? <Badge variant="primary">IP {listing.itemPower}</Badge> : null}
+        {listing.attunementPoints ? <Badge variant="info">Sintonia {listing.attunementPoints}</Badge> : null}
+        {investedCost ? <Badge variant="warning">Investido {formatSilver(investedCost)}</Badge> : null}
+        {traitTags.slice(0, expanded ? undefined : 4).map((tag) => (
+          <Badge key={tag} variant="outline">Trait {tag}</Badge>
+        ))}
+      </div>
+
+      {visibleTraits.length > 0 ? (
+        <div className="mt-2 grid gap-1.5">
+          {visibleTraits.map((trait) => (
+            <div key={trait.id} className="rounded-md border border-border-subtle bg-zinc-950/80 px-2 py-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <p className="truncate text-xs font-black text-white">{trait.name || 'Trait'}</p>
+                {trait.rarity ? <span className="text-[10px] font-bold uppercase text-status-info">{trait.rarity}</span> : null}
+              </div>
+              {trait.value ? <p className="mt-0.5 text-xs font-bold text-status-info">{trait.value}</p> : null}
+              {expanded && trait.notes ? <p className="mt-1 text-xs text-zinc-500">{trait.notes}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function hasWeaponTraitHighlights(listing: Weapon4Listing): boolean {
+  return (
+    listing.isAwakened ||
+    Boolean(listing.itemPower || listing.attunementPoints || getListingInvestedCost(listing) || listing.awakenedLevel) ||
+    Boolean(listing.traitTags?.length) ||
+    listing.traits.length > 0
+  );
+}
+
+function SellerContactActions({
+  listing,
+  compact = false,
+  onFeedback,
+}: {
+  listing: Pick<Weapon4Listing, 'sellerContact'>;
+  compact?: boolean;
+  onFeedback: (message: string) => void;
+}) {
+  const contact = listing.sellerContact?.trim();
+
+  if (!contact) {
+    return (
+      <div className="rounded-lg bg-zinc-950 p-3 text-xs font-bold text-zinc-500">
+        Contato não informado
+      </div>
+    );
+  }
+
+  const copyContact = async () => {
+    try {
+      await navigator.clipboard.writeText(contact);
+      onFeedback('Contato copiado.');
+    } catch {
+      onFeedback(`Contato do vendedor: ${contact}`);
+    }
+  };
+
+  return (
+    <div className={cn('flex flex-wrap gap-2 rounded-lg bg-zinc-950 p-2', compact && 'p-1.5')}>
+      <button type="button" onClick={copyContact} className="secondary-button h-8 px-2 text-xs">
+        <Copy size={13} />
+        Copiar contato
+      </button>
+    </div>
   );
 }
 
@@ -1003,7 +1325,7 @@ function WeaponFormModal({
                   <input
                     value={form.sellerContact}
                     onChange={(event) => updateForm('sellerContact', event.target.value)}
-                    placeholder="Discord, nick do Albion ou observação de contato"
+                    placeholder="Nick do Albion ou observação de contato"
                     className="field-control"
                   />
                 </label>
@@ -1017,7 +1339,6 @@ function WeaponFormModal({
                   >
                     <option value="available">Disponível</option>
                     <option value="reserved">Reservado</option>
-                    <option value="sold">Vendida</option>
                   </select>
                 </label>
 
@@ -1109,7 +1430,7 @@ function WeaponFormModal({
                 Dados da arma despertada
               </h3>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <label className="space-y-2">
                   <span className="field-label">Poder de Item atual</span>
                   <input
@@ -1131,6 +1452,18 @@ function WeaponFormModal({
                 </label>
 
                 <label className="space-y-2">
+                  <span className="field-label">Nível despertada</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.awakenedLevel}
+                    onChange={(event) => updateForm('awakenedLevel', event.target.value)}
+                    placeholder="Opcional"
+                    className="field-control"
+                  />
+                </label>
+
+                <label className="space-y-2">
                   <span className="field-label">Custo investido estimado</span>
                   <input
                     type="number"
@@ -1141,7 +1474,17 @@ function WeaponFormModal({
                   />
                 </label>
 
-                <label className="space-y-2 xl:col-span-1">
+                <label className="space-y-2">
+                  <span className="field-label">Tags adicionais</span>
+                  <input
+                    value={form.traitTags}
+                    onChange={(event) => updateForm('traitTags', event.target.value)}
+                    placeholder="PVP, Gank, Mists"
+                    className="field-control"
+                  />
+                </label>
+
+                <label className="space-y-2">
                   <span className="field-label">Build / uso</span>
                   <input
                     value={form.buildNotes}
@@ -1268,16 +1611,20 @@ function WeaponFormModal({
 
 function WeaponDetailsModal({
   listing,
+  canManage,
   onClose,
   onEdit,
   onDelete,
   onStatusChange,
+  onFeedback,
 }: {
   listing: Weapon4Listing;
+  canManage: boolean;
   onClose: () => void;
   onEdit: (listing: Weapon4Listing) => void;
   onDelete: (listingId: string) => void;
   onStatusChange: (listingId: string, status: ListingStatus) => void;
+  onFeedback: (message: string) => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/75 backdrop-blur-sm md:items-center md:justify-center">
@@ -1305,9 +1652,11 @@ function WeaponDetailsModal({
             <MiniMetric label="Servidor" value={formatServerName(listing.server)} />
             <MiniMetric label="Cidade" value={formatCityName(listing.city)} />
             <MiniMetric label="Vendedor" value={getListingSellerName(listing)} />
-            <MiniMetric label="Contato" value={getListingSellerContact(listing)} />
+            <div className="md:col-span-2">
+              <SellerContactActions listing={listing} onFeedback={onFeedback} />
+            </div>
             <MiniMetric label="Criado" value={formatDateTime(listing.createdAt)} />
-            <MiniMetric label="Atualizado" value={formatRelativeTime(listing.updatedAt)} />
+            <MiniMetric label="Atualizado" value={<RelativeTime date={listing.updatedAt} />} />
           </div>
 
           <WeaponEvaluationSummary listing={listing} expanded />
@@ -1323,7 +1672,9 @@ function WeaponDetailsModal({
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <MiniMetric label="Vendedor" value={getListingSellerName(listing)} />
-              <MiniMetric label="Contato informado" value={getListingSellerContact(listing)} />
+              <div className="md:col-span-2">
+                <SellerContactActions listing={listing} onFeedback={onFeedback} />
+              </div>
               <MiniMetric label="Servidor" value={formatServerName(listing.server)} />
               <MiniMetric label="Cidade" value={formatCityName(listing.city)} />
               <MiniMetric label="Status" value={statusLabel[listing.status]} />
@@ -1362,19 +1713,14 @@ function WeaponDetailsModal({
             </InfoPanel>
           </section>
 
-          {listing.isAwakened ? (
+          {hasWeaponTraitHighlights(listing) ? (
             <section className="rounded-lg border border-status-info/20 bg-status-info/10 p-4">
               <h3 className="flex items-center gap-2 font-black text-white">
                 <WandSparkles className="text-status-info" size={18} />
                 Traits detalhados
               </h3>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <MiniMetric label="Poder de Item" value={listing.itemPower || 'Não informado'} />
-                <MiniMetric label="Pontos de sintonia" value={listing.attunementPoints || 'Não informado'} />
-                <MiniMetric
-                  label="Custo investido"
-                  value={listing.estimatedInvestment ? formatSilver(listing.estimatedInvestment) : 'Não informado'}
-                />
+              <div className="mt-4">
+                <WeaponTraitHighlights listing={listing} expanded />
               </div>
               {listing.buildNotes ? <p className="mt-4 text-sm text-zinc-300">{listing.buildNotes}</p> : null}
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -1398,32 +1744,34 @@ function WeaponDetailsModal({
 
           <SecurityNotice />
 
-          <div className="flex flex-col gap-2 border-t border-border-subtle pt-5 sm:flex-row sm:flex-wrap sm:justify-end">
-            <button type="button" onClick={() => onEdit(listing)} className="secondary-button justify-center">
-              <Edit3 size={15} />
-              Editar
-            </button>
-            <button
-              type="button"
-              onClick={() => onStatusChange(listing.id, 'reserved')}
-              className="secondary-button justify-center"
-              disabled={listing.status === 'reserved'}
-            >
-              Reservar
-            </button>
-            <button
-              type="button"
-              onClick={() => onStatusChange(listing.id, 'sold')}
-              className="secondary-button justify-center"
-              disabled={listing.status === 'sold'}
-            >
-              Marcar vendida
-            </button>
-            <button type="button" onClick={() => onDelete(listing.id)} className="danger-button justify-center">
-              <Trash2 size={15} />
-              Excluir
-            </button>
-          </div>
+          {canManage ? (
+            <div className="flex flex-col gap-2 border-t border-border-subtle pt-5 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button type="button" onClick={() => onEdit(listing)} className="secondary-button justify-center">
+                <Edit3 size={15} />
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange(listing.id, 'reserved')}
+                className="secondary-button justify-center"
+                disabled={listing.status === 'reserved'}
+              >
+                Reservar
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange(listing.id, 'sold')}
+                className="secondary-button justify-center"
+                disabled={listing.status === 'sold'}
+              >
+                Marcar vendida
+              </button>
+              <button type="button" onClick={() => onDelete(listing.id)} className="danger-button justify-center">
+                <Trash2 size={15} />
+                Excluir
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -1591,15 +1939,20 @@ function HeaderMetric({ icon: Icon, label, value }: { icon: typeof Sword; label:
   );
 }
 
-function WeaponVisual({ listing }: { listing: Weapon4Listing }) {
+function WeaponVisual({ listing, compact = false }: { listing: Weapon4Listing; compact?: boolean }) {
   return (
-    <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden border-b border-border-subtle bg-[radial-gradient(circle_at_32%_24%,rgba(250,204,21,0.24),transparent_30%),radial-gradient(circle_at_70%_78%,rgba(56,189,248,0.13),transparent_34%),linear-gradient(135deg,#09090b,#18181b)]">
-      <Sword className="text-brand-primary/85" size={76} />
-      {listing.isAwakened ? <Sparkles className="absolute right-5 top-5 text-status-info" size={22} /> : null}
-      <div className="absolute left-4 top-4 rounded-md border border-brand-primary/25 bg-bg-dark/85 px-2 py-1 text-xs font-black text-brand-primary">
+    <div
+      className={cn(
+        'relative flex items-center justify-center overflow-hidden border-border-subtle bg-[radial-gradient(circle_at_32%_24%,rgba(250,204,21,0.24),transparent_30%),radial-gradient(circle_at_70%_78%,rgba(56,189,248,0.13),transparent_34%),linear-gradient(135deg,#09090b,#18181b)]',
+        compact ? 'h-full min-h-28 w-full border-b lg:min-h-full lg:border-b-0 lg:border-r' : 'aspect-[16/9] border-b',
+      )}
+    >
+      <Sword className="text-brand-primary/85" size={compact ? 44 : 76} />
+      {listing.isAwakened ? <Sparkles className={cn('absolute text-status-info', compact ? 'right-3 top-3' : 'right-5 top-5')} size={compact ? 16 : 22} /> : null}
+      <div className={cn('absolute rounded-md border border-brand-primary/25 bg-bg-dark/85 px-2 py-1 font-black text-brand-primary', compact ? 'left-3 top-3 text-[11px]' : 'left-4 top-4 text-xs')}>
         {formatTierEnchant(listing.tier, 4)}
       </div>
-      <div className="absolute bottom-4 right-4 rounded-md border border-border-subtle bg-bg-dark/85 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
+      <div className={cn('absolute rounded-md border border-border-subtle bg-bg-dark/85 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-zinc-400', compact ? 'bottom-3 right-3' : 'bottom-4 right-4')}>
         {listing.isAwakened ? 'Despertada' : '.4 comum'}
       </div>
     </div>
@@ -1695,7 +2048,7 @@ function MiniMetric({
   tone,
 }: {
   label: string;
-  value: string | number;
+  value: React.ReactNode;
   tone?: 'brand' | 'success' | 'danger';
 }) {
   return (
@@ -1728,6 +2081,8 @@ function formToListingInput(
     user?.playerName ??
     form.sellerPlayerName;
   const safetyAcceptedAt = currentListing?.safetyAcceptedAt ?? form.safetyAcceptedAt ?? new Date().toISOString();
+  const sellerContact = form.sellerContact.trim() || undefined;
+  const investedCost = isAwakened ? parseOptionalSilver(form.estimatedInvestment) : undefined;
 
   return {
     weaponName: form.weaponName.trim(),
@@ -1743,7 +2098,10 @@ function formToListingInput(
     sellerPlayerName,
     sellerPlayerId: currentListing?.sellerPlayerId ?? user?.playerId ?? form.sellerPlayerId,
     sellerServer: currentListing?.sellerServer ?? user?.server ?? form.sellerServer,
-    sellerContact: form.sellerContact.trim() || undefined,
+    sellerContact,
+    discordUsername: undefined,
+    discordUserId: undefined,
+    discordInviteUrl: undefined,
     safetyAcceptedAt,
     status: form.status,
     description: form.description.trim() || undefined,
@@ -1751,10 +2109,14 @@ function formToListingInput(
     screenshots: parseScreenshots(form.screenshotsText),
     notes: form.notes.trim() || undefined,
     isAwakened,
+    awakened: isAwakened,
+    awakenedLevel: isAwakened ? parseOptionalInteger(form.awakenedLevel) : undefined,
     itemPower: isAwakened ? form.itemPower.trim() || undefined : undefined,
     traits: isAwakened ? parseTraits(form.traits) : [],
+    traitTags: isAwakened ? parseTags(form.traitTags) : [],
     attunementPoints: isAwakened ? form.attunementPoints.trim() || undefined : undefined,
-    estimatedInvestment: isAwakened ? parseOptionalSilver(form.estimatedInvestment) : undefined,
+    investedCost,
+    estimatedInvestment: investedCost,
     buildNotes: isAwakened ? form.buildNotes.trim() || undefined : undefined,
   };
 }
@@ -1773,6 +2135,9 @@ function formFromListing(listing: Weapon4Listing): Weapon4FormState {
     sellerPlayerId: listing.sellerPlayerId,
     sellerServer: listing.sellerServer,
     sellerContact: listing.sellerContact ?? '',
+    discordUsername: '',
+    discordUserId: '',
+    discordInviteUrl: '',
     safetyAccepted: Boolean(listing.safetyAcceptedAt),
     safetyAcceptedAt: listing.safetyAcceptedAt,
     status: listing.status,
@@ -1781,10 +2146,12 @@ function formFromListing(listing: Weapon4Listing): Weapon4FormState {
     screenshotsText: listing.screenshots.join('\n'),
     notes: listing.notes ?? '',
     isAwakened: listing.isAwakened,
+    awakenedLevel: listing.awakenedLevel ? String(listing.awakenedLevel) : '',
     itemPower: listing.itemPower ?? '',
     traits: listing.traits.length > 0 ? listing.traits.map(traitToForm) : [emptyTrait()],
+    traitTags: listing.traitTags?.join(', ') ?? '',
     attunementPoints: listing.attunementPoints ?? '',
-    estimatedInvestment: listing.estimatedInvestment ? String(listing.estimatedInvestment) : '',
+    estimatedInvestment: getListingInvestedCost(listing) ? String(getListingInvestedCost(listing)) : '',
     buildNotes: listing.buildNotes ?? '',
   };
 }
@@ -1826,6 +2193,23 @@ function parseOptionalSilver(value: string): number | undefined {
   const numeric = Number(value);
 
   return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function parseOptionalInteger(value: string): number | undefined {
+  const numeric = Number(value);
+
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function parseTags(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function resolveItemIdFromName(weaponName: string, tier: Tier): string {
@@ -1893,4 +2277,8 @@ function getListingSellerName(listing: Pick<Weapon4Listing, 'sellerName' | 'sell
 
 function getListingSellerContact(listing: Pick<Weapon4Listing, 'sellerContact'>): string {
   return listing.sellerContact || 'Contato não informado';
+}
+
+function getListingInvestedCost(listing: Pick<Weapon4Listing, 'investedCost' | 'estimatedInvestment'>): number | undefined {
+  return listing.investedCost ?? listing.estimatedInvestment;
 }

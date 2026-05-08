@@ -30,6 +30,10 @@ type ProfileRow = {
   main_server: ServerParam;
   plan: SubscriptionPlan;
   subscription_status: SubscriptionStatus;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_price_id: string | null;
+  subscription_current_period_end: string | null;
   created_at: string;
   updated_at: string | null;
 };
@@ -37,8 +41,11 @@ type ProfileRow = {
 type UserSettingsRow = {
   default_server: ServerParam;
   market_tax: number;
+  has_albion_premium: boolean | null;
   main_city: Exclude<AlbionCity, 'Black Market'> | null;
   update_interval_minutes: number | null;
+  interface_density: UserSettings['interfaceDensity'] | null;
+  browser_notifications_enabled: boolean | null;
   currency: 'prata' | null;
 };
 
@@ -88,10 +95,19 @@ type WeaponListingRow = {
   asking_price: number;
   status: ListingStatus;
   is_awakened: boolean | null;
+  awakened?: boolean | null;
+  item_power?: number | null;
+  attunement_points?: number | null;
+  invested_cost?: number | string | null;
+  trait_tags?: string[] | null;
+  awakened_level?: number | null;
   traits: unknown;
   suggested_use: string | null;
   description: string | null;
   seller_contact: string | null;
+  discord_username?: string | null;
+  discord_user_id?: string | null;
+  discord_invite_url?: string | null;
   safety_accepted_at: string | null;
   created_at: string;
   updated_at: string | null;
@@ -119,6 +135,20 @@ type ChatMessageRow = {
   created_at: string;
 };
 
+export const CHAT_MESSAGE_TTL_MS = 5 * 60 * 1000;
+
+export function getChatMessageCutoffIso(now = Date.now()): string {
+  return new Date(now - CHAT_MESSAGE_TTL_MS).toISOString();
+}
+
+export function isFreshChatMessage(message: ChatMessage, now = Date.now()): boolean {
+  return new Date(message.createdAt).getTime() >= now - CHAT_MESSAGE_TTL_MS;
+}
+
+export function filterFreshChatMessages(messages: ChatMessage[], now = Date.now()): ChatMessage[] {
+  return messages.filter((message) => isFreshChatMessage(message, now));
+}
+
 export function isSupabaseConfigured() {
   return Boolean(getBrowserSupabase());
 }
@@ -142,7 +172,12 @@ export function profileRowToUser(row: ProfileRow, authUser?: User | null): UserA
     server: row.main_server === 'europe' ? 'europe' : 'americas',
     plan: row.plan === 'pro' ? 'pro' : 'free',
     subscriptionStatus: normalizeSubscriptionStatus(row.subscription_status),
+    stripeCustomerId: row.stripe_customer_id ?? undefined,
+    stripeSubscriptionId: row.stripe_subscription_id ?? undefined,
+    stripePriceId: row.stripe_price_id ?? undefined,
+    subscriptionCurrentPeriodEnd: row.subscription_current_period_end ?? undefined,
     createdAt: row.created_at,
+    updatedAt: row.updated_at ?? undefined,
     lastLoginAt: new Date().toISOString(),
   };
 }
@@ -211,7 +246,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
   const supabase = ensureSupabaseClient();
   const { data, error } = await supabase
     .from('user_settings')
-    .select('default_server, market_tax, main_city, update_interval_minutes, currency')
+    .select('*')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -230,15 +265,17 @@ export async function upsertUserSettings(userId: string, settings: UserSettings)
       {
         user_id: userId,
         default_server: normalizedSettings.defaultServer,
-        market_tax: normalizedSettings.marketTax / 100,
+        has_albion_premium: normalizedSettings.hasAlbionPremium,
         main_city: normalizedSettings.mainCity,
         update_interval_minutes: normalizedSettings.updateInterval,
+        interface_density: normalizedSettings.interfaceDensity,
+        browser_notifications_enabled: normalizedSettings.browserNotificationsEnabled,
         currency: normalizedSettings.currency,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id' },
     )
-    .select('default_server, market_tax, main_city, update_interval_minutes, currency')
+    .select('*')
     .single();
 
   if (error) throw error;
@@ -357,6 +394,8 @@ export async function createWeaponListingInSupabase(listing: Weapon4Listing): Pr
 }
 
 export async function updateWeaponListingInSupabase(listing: Weapon4Listing): Promise<Weapon4Listing> {
+  if (!listing.sellerUserId) throw new Error('Não foi possível validar o dono do anúncio.');
+
   const supabase = ensureSupabaseClient();
   const { data, error } = await supabase
     .from('weapon_listings')
@@ -365,6 +404,7 @@ export async function updateWeaponListingInSupabase(listing: Weapon4Listing): Pr
       updated_at: new Date().toISOString(),
     })
     .eq('id', listing.id)
+    .eq('user_id', listing.sellerUserId)
     .select('*')
     .single();
 
@@ -373,26 +413,35 @@ export async function updateWeaponListingInSupabase(listing: Weapon4Listing): Pr
   return weaponListingRowToDomain(data as WeaponListingRow);
 }
 
-export async function deleteWeaponListingFromSupabase(listingId: string) {
+export async function deleteWeaponListingFromSupabase(listingId: string, ownerUserId: string) {
   const supabase = ensureSupabaseClient();
-  const { error } = await supabase.from('weapon_listings').delete().eq('id', listingId);
+  const { error } = await supabase
+    .from('weapon_listings')
+    .delete()
+    .eq('id', listingId)
+    .eq('user_id', ownerUserId);
 
   if (error) throw error;
 }
 
 export async function fetchChatMessages(channel: ChatChannel): Promise<ChatMessage[]> {
   const supabase = ensureSupabaseClient();
+  const cutoffIso = getChatMessageCutoffIso();
+
+  void cleanupOldChatMessages();
+
   const { data, error } = await supabase
     .from('chat_messages')
     .select('*')
     .eq('channel', channel)
     .eq('status', 'visible')
+    .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
     .limit(80);
 
   if (error) throw error;
 
-  return ((data ?? []) as ChatMessageRow[]).reverse().map(chatMessageRowToDomain);
+  return filterFreshChatMessages(((data ?? []) as ChatMessageRow[]).reverse().map(chatMessageRowToDomain));
 }
 
 export async function sendChatMessage(input: {
@@ -401,6 +450,9 @@ export async function sendChatMessage(input: {
   content: string;
 }): Promise<ChatMessage> {
   const supabase = ensureSupabaseClient();
+
+  void cleanupOldChatMessages();
+
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -414,6 +466,18 @@ export async function sendChatMessage(input: {
   if (error) throw error;
 
   return chatMessageRowToDomain(data as ChatMessageRow);
+}
+
+export async function cleanupOldChatMessages() {
+  const supabase = getBrowserSupabase();
+
+  if (!supabase) return;
+
+  const { error } = await supabase.rpc('cleanup_old_chat_messages');
+
+  if (error && process.env.NODE_ENV === 'development') {
+    console.warn('[chat] cleanup_old_chat_messages unavailable', error.message);
+  }
 }
 
 export async function reportChatMessage(messageId: string) {
@@ -454,8 +518,11 @@ function settingsRowToDomain(row: UserSettingsRow): UserSettings {
   return mergeWithDefaultSettings({
     defaultServer: row.default_server,
     marketTax: storedMarketTax <= 1 ? storedMarketTax * 100 : storedMarketTax,
+    hasAlbionPremium: row.has_albion_premium === true,
     mainCity: row.main_city ?? DEFAULT_USER_SETTINGS.mainCity,
     updateInterval: row.update_interval_minutes ?? DEFAULT_USER_SETTINGS.updateInterval,
+    interfaceDensity: row.interface_density === 'compact' ? 'compact' : 'comfortable',
+    browserNotificationsEnabled: row.browser_notifications_enabled === true,
     darkTheme: true,
     currency: row.currency ?? 'prata',
   });
@@ -519,7 +586,9 @@ function weaponListingRowToDomain(row: WeaponListingRow): Weapon4Listing {
   const useCases = row.suggested_use
     ? row.suggested_use.split(',').map((item) => item.trim()).filter(Boolean) as WeaponUseCase[]
     : [];
-  const type: Weapon4ListingType = row.is_awakened ? 'awakened' : 'standard-4';
+  const isAwakened = Boolean(row.awakened ?? row.is_awakened);
+  const type: Weapon4ListingType = isAwakened ? 'awakened' : 'standard-4';
+  const investedCost = toOptionalNumber(row.invested_cost);
 
   return {
     id: row.id,
@@ -543,7 +612,17 @@ function weaponListingRowToDomain(row: WeaponListingRow): Weapon4Listing {
     useCases,
     screenshots: [],
     type,
-    isAwakened: Boolean(row.is_awakened),
+    isAwakened,
+    awakened: isAwakened,
+    awakenedLevel: toOptionalInteger(row.awakened_level),
+    itemPower: toOptionalInteger(row.item_power)?.toString(),
+    attunementPoints: toOptionalInteger(row.attunement_points)?.toString(),
+    investedCost,
+    estimatedInvestment: investedCost,
+    traitTags: Array.isArray(row.trait_tags) ? row.trait_tags.filter(Boolean) : [],
+    discordUsername: row.discord_username ?? row.seller_contact ?? undefined,
+    discordUserId: row.discord_user_id ?? undefined,
+    discordInviteUrl: row.discord_invite_url ?? undefined,
     traits: Array.isArray(row.traits) ? row.traits as Weapon4Listing['traits'] : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at ?? row.created_at,
@@ -551,7 +630,11 @@ function weaponListingRowToDomain(row: WeaponListingRow): Weapon4Listing {
 }
 
 function weaponListingToRow(listing: Weapon4Listing) {
+  const isAwakened = Boolean(listing.awakened ?? listing.isAwakened);
+  const investedCost = listing.investedCost ?? listing.estimatedInvestment ?? null;
+
   return {
+    user_id: listing.sellerUserId ?? undefined,
     seller_player_name: listing.sellerPlayerName,
     seller_player_id: listing.sellerPlayerId ?? null,
     weapon_name: listing.weaponName,
@@ -563,11 +646,20 @@ function weaponListingToRow(listing: Weapon4Listing) {
     city: listing.city,
     asking_price: listing.askingPrice,
     status: listing.status,
-    is_awakened: listing.isAwakened,
+    is_awakened: isAwakened,
+    awakened: isAwakened,
+    item_power: toNullableInteger(listing.itemPower),
+    attunement_points: toNullableInteger(listing.attunementPoints),
+    invested_cost: investedCost,
+    trait_tags: listing.traitTags ?? [],
+    awakened_level: listing.awakenedLevel ?? null,
     traits: listing.traits,
     suggested_use: listing.useCases.join(', '),
     description: listing.description ?? listing.notes ?? null,
     seller_contact: listing.sellerContact ?? null,
+    discord_username: listing.discordUsername ?? listing.sellerContact ?? null,
+    discord_user_id: listing.discordUserId ?? null,
+    discord_invite_url: listing.discordInviteUrl ?? null,
     safety_accepted_at: listing.safetyAcceptedAt,
   };
 }
@@ -585,13 +677,37 @@ function chatMessageRowToDomain(row: ChatMessageRow): ChatMessage {
 }
 
 function normalizeSubscriptionStatus(value: string): SubscriptionStatus {
-  if (value === 'active' || value === 'past_due' || value === 'canceled') return value;
+  if (
+    value === 'active' ||
+    value === 'trialing' ||
+    value === 'past_due' ||
+    value === 'canceled' ||
+    value === 'unpaid' ||
+    value === 'incomplete' ||
+    value === 'incomplete_expired' ||
+    value === 'inactive' ||
+    value === 'paused'
+  ) {
+    return value;
+  }
 
   return 'free';
 }
 
-function toOptionalNumber(value: number | null): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? Number(value) : undefined;
+function toOptionalNumber(value: unknown): number | undefined {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function toOptionalInteger(value: unknown): number | undefined {
+  const numeric = Number(value);
+
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function toNullableInteger(value: unknown): number | null {
+  return toOptionalInteger(value) ?? null;
 }
 
 function isUuid(value: unknown): value is string {

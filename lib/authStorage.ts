@@ -130,7 +130,12 @@ function normalizeStoredUser(value: unknown): StoredAuthUser | null {
     server,
     plan: candidate.plan === 'pro' ? 'pro' : 'free',
     subscriptionStatus: normalizeSubscriptionStatus(candidate.subscriptionStatus),
+    stripeCustomerId: normalizeOptionalString(candidate.stripeCustomerId),
+    stripeSubscriptionId: normalizeOptionalString(candidate.stripeSubscriptionId),
+    stripePriceId: normalizeOptionalString(candidate.stripePriceId),
+    subscriptionCurrentPeriodEnd: normalizeOptionalString(candidate.subscriptionCurrentPeriodEnd),
     createdAt: normalizeDate(candidate.createdAt),
+    updatedAt: normalizeOptionalString(candidate.updatedAt),
     lastLoginAt: normalizeDate(candidate.lastLoginAt),
     passwordHash: normalizeOptionalString(candidate.passwordHash),
   };
@@ -166,7 +171,19 @@ function normalizeServer(value: unknown): ServerParam | null {
 }
 
 function normalizeSubscriptionStatus(value: unknown): UserAccount['subscriptionStatus'] {
-  if (value === 'active' || value === 'past_due' || value === 'canceled') return value;
+  if (
+    value === 'active' ||
+    value === 'trialing' ||
+    value === 'past_due' ||
+    value === 'canceled' ||
+    value === 'unpaid' ||
+    value === 'incomplete' ||
+    value === 'incomplete_expired' ||
+    value === 'inactive' ||
+    value === 'paused'
+  ) {
+    return value;
+  }
 
   return 'free';
 }
