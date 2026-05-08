@@ -24,8 +24,19 @@ export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   const admin = getSupabaseAdmin();
 
-  if (!stripe || !webhookSecret || !admin) {
-    return NextResponse.json({ error: 'Pagamentos ainda não configurados.' }, { status: 503 });
+  if (!stripe) {
+    console.error('[stripe webhook] missing STRIPE_SECRET_KEY');
+    return NextResponse.json({ error: 'Stripe não configurado.' }, { status: 500 });
+  }
+
+  if (!webhookSecret) {
+    console.error('[stripe webhook] missing STRIPE_WEBHOOK_SECRET');
+    return NextResponse.json({ error: 'Webhook Stripe não configurado.' }, { status: 500 });
+  }
+
+  if (!admin) {
+    console.error('[stripe webhook] missing Supabase admin env');
+    return NextResponse.json({ error: 'Supabase admin não configurado.' }, { status: 503 });
   }
 
   const body = await request.text();
@@ -113,17 +124,13 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const subscriptionId = getInvoiceSubscriptionId(invoice);
   const customerId = getStripeId(invoice.customer);
 
-  await updateProfileBySubscriptionOrCustomer(
-    subscriptionId,
-    customerId,
-    {
-      plan: 'pro',
-      subscription_status: 'past_due',
-      ...(customerId ? { stripe_customer_id: customerId } : {}),
-      ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : {}),
-      updated_at: new Date().toISOString(),
-    },
-  );
+  await updateProfileBySubscriptionOrCustomer(subscriptionId, customerId, {
+    plan: 'pro',
+    subscription_status: 'past_due',
+    ...(customerId ? { stripe_customer_id: customerId } : {}),
+    ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : {}),
+    updated_at: new Date().toISOString(),
+  });
 }
 
 async function updateProfileFromSubscription(
@@ -163,10 +170,7 @@ async function updateProfileByUserId(userId: string, payload: Partial<ProfileUpd
 
   if (!admin) throw new Error('Supabase admin não configurado.');
 
-  const { error } = await admin
-    .from('profiles')
-    .update(payload)
-    .eq('id', userId);
+  const { error } = await admin.from('profiles').update(payload).eq('id', userId);
 
   if (error) throw error;
 }
@@ -192,10 +196,7 @@ async function updateProfileBySubscriptionOrCustomer(
   }
 
   if (customerId) {
-    const { error } = await admin
-      .from('profiles')
-      .update(payload)
-      .eq('stripe_customer_id', customerId);
+    const { error } = await admin.from('profiles').update(payload).eq('stripe_customer_id', customerId);
 
     if (error) throw error;
   }

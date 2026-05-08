@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { isUserPro } from '@/src/lib/entitlements';
+import { getBrowserSupabase } from '@/src/lib/supabase/client';
 import type { SubscriptionStatus } from '@/types/albion';
 
 export const PRO_PRICE_LABEL = 'R$ 10/mês';
@@ -74,17 +75,29 @@ export default function ProPage() {
     setMessage('');
 
     try {
-      const response = await fetch('/api/stripe/create-checkout-session', { method: 'POST' });
+      const token = await getCurrentAccessToken();
+
+      if (!token) {
+        setMessage('Não foi possível validar sua sessão. Faça login novamente.');
+        return;
+      }
+
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       const payload = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
 
       if (!response.ok || !payload?.url) {
-        setMessage(payload?.error ?? 'Pagamentos ainda não configurados.');
+        setMessage(payload?.error ?? 'Não foi possível abrir o checkout. Tente novamente.');
         return;
       }
 
       window.location.href = payload.url;
     } catch {
-      setMessage('Pagamentos ainda não configurados.');
+      setMessage('Não foi possível abrir o checkout. Tente novamente.');
     } finally {
       setBusyAction(null);
     }
@@ -95,7 +108,19 @@ export default function ProPage() {
     setMessage('');
 
     try {
-      const response = await fetch('/api/stripe/customer-portal', { method: 'POST' });
+      const token = await getCurrentAccessToken();
+
+      if (!token) {
+        setMessage('Não foi possível validar sua sessão. Faça login novamente.');
+        return;
+      }
+
+      const response = await fetch('/api/stripe/customer-portal', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       const payload = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
 
       if (!response.ok || !payload?.url) {
@@ -142,6 +167,7 @@ export default function ProPage() {
               <ProSubscriptionPanel
                 status={user?.subscriptionStatus}
                 periodEnd={user?.subscriptionCurrentPeriodEnd}
+                stripeCustomerId={user?.stripeCustomerId}
                 isPastDue={isPastDue}
                 busy={busyAction === 'portal'}
                 onManage={() => void openCustomerPortal()}
@@ -211,6 +237,16 @@ export default function ProPage() {
   );
 }
 
+async function getCurrentAccessToken(): Promise<string | null> {
+  const supabase = getBrowserSupabase();
+
+  if (!supabase) return null;
+
+  const { data } = await supabase.auth.getSession();
+
+  return data.session?.access_token ?? null;
+}
+
 function FreeSubscriptionPanel({ busy, onCheckout }: { busy: boolean; onCheckout: () => void }) {
   return (
     <>
@@ -232,12 +268,14 @@ function FreeSubscriptionPanel({ busy, onCheckout }: { busy: boolean; onCheckout
 function ProSubscriptionPanel({
   status,
   periodEnd,
+  stripeCustomerId,
   isPastDue,
   busy,
   onManage,
 }: {
   status?: SubscriptionStatus;
   periodEnd?: string;
+  stripeCustomerId?: string;
   isPastDue: boolean;
   busy: boolean;
   onManage: () => void;
@@ -249,17 +287,32 @@ function ProSubscriptionPanel({
         Você está no PRO
       </div>
       <div className="mt-3 grid gap-2 text-xs text-zinc-400">
-        <p>Status: <span className={cn('font-black text-white', isPastDue && 'text-status-warning')}>{statusLabels[status ?? 'active']}</span></p>
-        {periodEnd ? <p>Próxima renovação: <span className="font-black text-white">{formatDate(periodEnd)}</span></p> : null}
+        <p>
+          Status:{' '}
+          <span className={cn('font-black text-white', isPastDue && 'text-status-warning')}>
+            {statusLabels[status ?? 'active']}
+          </span>
+        </p>
+        {periodEnd ? (
+          <p>
+            Próxima renovação: <span className="font-black text-white">{formatDate(periodEnd)}</span>
+          </p>
+        ) : null}
       </div>
-      <button
-        type="button"
-        onClick={onManage}
-        disabled={busy}
-        className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-brand-primary px-4 text-sm font-black text-bg-dark transition-colors hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        {busy ? 'Abrindo portal...' : 'Gerenciar assinatura'}
-      </button>
+      {stripeCustomerId ? (
+        <button
+          type="button"
+          onClick={onManage}
+          disabled={busy}
+          className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-brand-primary px-4 text-sm font-black text-bg-dark transition-colors hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {busy ? 'Abrindo portal...' : 'Gerenciar assinatura'}
+        </button>
+      ) : (
+        <p className="mt-3 rounded-lg border border-status-warning/25 bg-status-warning/10 p-3 text-xs font-bold text-status-warning">
+          PRO ativo sem assinatura Stripe vinculada.
+        </p>
+      )}
     </>
   );
 }
