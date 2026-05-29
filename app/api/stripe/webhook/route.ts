@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getSupabaseAdmin } from '@/src/lib/supabase/admin';
 import { getStripe } from '@/src/lib/stripe';
+import {
+  recordStreamerCouponRedemption,
+  updateStreamerRedemptionSubscriptionStatus,
+} from '@/src/services/streamerCouponRedemptionsService';
 import type { SubscriptionPlan, SubscriptionStatus } from '@/types/albion';
 
 export const dynamic = 'force-dynamic';
@@ -64,12 +68,14 @@ export async function POST(request: Request) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
         await updateProfileFromSubscription(event.data.object as Stripe.Subscription);
+        await safelyUpdateStreamerRedemptionStatus(event.data.object as Stripe.Subscription);
         break;
       case 'customer.subscription.deleted':
         await updateProfileFromSubscription(event.data.object as Stripe.Subscription, {
           forcePlan: 'free',
           forceStatus: 'canceled',
         });
+        await safelyUpdateStreamerRedemptionStatus(event.data.object as Stripe.Subscription, 'canceled');
         break;
       case 'invoice.paid':
         await handleInvoicePaid(stripe, event.data.object as Stripe.Invoice);
@@ -94,25 +100,29 @@ async function handleCheckoutCompleted(stripe: Stripe, session: Stripe.Checkout.
 
   const subscriptionId = getStripeId(session.subscription);
   const customerId = getStripeId(session.customer);
-  const supabaseUserId = session.metadata?.supabaseUserId;
+  const supabaseUserId = session.client_reference_id ?? session.metadata?.supabaseUserId ?? session.metadata?.user_id;
+  let subscription: Stripe.Subscription | null = null;
 
   if (subscriptionId) {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
     await updateProfileFromSubscription(subscription, { supabaseUserId, customerId });
+    await safelyRecordStreamerCouponRedemption(stripe, session, subscription);
     return;
   }
 
-  if (!supabaseUserId) return;
+  if (supabaseUserId) {
+    await updateProfileByUserId(supabaseUserId, {
+      plan: 'pro',
+      subscription_status: 'active',
+      stripe_customer_id: customerId,
+      stripe_subscription_id: subscriptionId,
+      subscription_cancel_at_period_end: false,
+      subscription_cancel_at: null,
+      updated_at: new Date().toISOString(),
+    });
+  }
 
-  await updateProfileByUserId(supabaseUserId, {
-    plan: 'pro',
-    subscription_status: 'active',
-    stripe_customer_id: customerId,
-    stripe_subscription_id: subscriptionId,
-    subscription_cancel_at_period_end: false,
-    subscription_cancel_at: null,
-    updated_at: new Date().toISOString(),
-  });
+  await safelyRecordStreamerCouponRedemption(stripe, session, subscription);
 }
 
 async function handleInvoicePaid(stripe: Stripe, invoice: Stripe.Invoice) {
@@ -122,6 +132,7 @@ async function handleInvoicePaid(stripe: Stripe, invoice: Stripe.Invoice) {
 
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
   await updateProfileFromSubscription(subscription);
+  await safelyUpdateStreamerRedemptionStatus(subscription);
 }
 
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
@@ -135,6 +146,36 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : {}),
     updated_at: new Date().toISOString(),
   });
+
+  if (subscriptionId) {
+    await safelyUpdateStreamerRedemptionStatus({ id: subscriptionId, status: 'past_due' } as Stripe.Subscription);
+  }
+}
+
+async function safelyRecordStreamerCouponRedemption(
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+  subscription: Stripe.Subscription | null,
+) {
+  try {
+    await recordStreamerCouponRedemption(stripe, session, { subscription });
+  } catch (error) {
+    console.error('[stripe webhook] streamer coupon attribution failed', {
+      sessionId: session.id,
+      message: error instanceof Error ? error.message : 'Erro desconhecido',
+    });
+  }
+}
+
+async function safelyUpdateStreamerRedemptionStatus(subscription: Stripe.Subscription, statusOverride?: string) {
+  try {
+    await updateStreamerRedemptionSubscriptionStatus(subscription, statusOverride);
+  } catch (error) {
+    console.error('[stripe webhook] streamer redemption status update failed', {
+      subscriptionId: subscription.id,
+      message: error instanceof Error ? error.message : 'Erro desconhecido',
+    });
+  }
 }
 
 async function updateProfileFromSubscription(

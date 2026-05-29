@@ -28,6 +28,7 @@ const PROTECTED_PREFIXES = [
   '/profile',
   '/competition',
   '/pro',
+  '/admin',
 ];
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {

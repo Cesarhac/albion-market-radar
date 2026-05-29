@@ -7,6 +7,7 @@ import {
   Crown,
   Bell,
   LayoutDashboard,
+  LifeBuoy,
   Menu,
   MessageCircle,
   PackageSearch,
@@ -33,11 +34,13 @@ const navItems = [
   { name: 'Chat', href: '/chat', icon: MessageCircle },
   { name: 'Alertas', href: '/alerts', icon: Bell },
   { name: 'PRO', href: '/pro', icon: Crown },
+  { name: 'Suporte', href: '/support', icon: LifeBuoy },
   { name: 'Configurações', href: '/settings', icon: Settings },
 ];
 
 const publicNavItems = [
   { name: 'Painel', href: '/', icon: LayoutDashboard },
+  { name: 'Suporte', href: '/support', icon: LifeBuoy },
 ];
 
 export function Sidebar() {

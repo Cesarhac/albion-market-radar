@@ -28,6 +28,8 @@ export const OPPORTUNITY_SORT_OPTIONS: Array<{ value: OpportunitySortBy; label: 
   { value: 'score', label: 'Melhor score' },
   { value: 'profit', label: 'Maior lucro líquido' },
   { value: 'margin', label: 'Maior margem' },
+  { value: 'buyCity', label: 'Cidade de compra' },
+  { value: 'sellCity', label: 'Cidade de venda/destino' },
   { value: 'recent', label: 'Mais recente' },
   { value: 'investment', label: 'Menor investimento' },
 ];

@@ -251,10 +251,9 @@ export function getWorstStatus(prices: CityPrice[]): UpdateStatus {
 function getLatestValidDate(values: Array<string | undefined>): string {
   const timestamps = values
     .map((value) => {
-      if (!value || value.startsWith('0001-01-01')) return Number.NaN;
-      return new Date(value).getTime();
+      return parseAlbionTimestamp(value);
     })
-    .filter(Number.isFinite);
+    .filter((timestamp): timestamp is number => timestamp !== null);
 
   if (timestamps.length === 0) return '';
 
@@ -262,11 +261,19 @@ function getLatestValidDate(values: Array<string | undefined>): string {
 }
 
 function normalizeAlbionDate(value: string | undefined): string {
-  if (!value || value.startsWith('0001-01-01')) return '';
+  const timestamp = parseAlbionTimestamp(value);
 
-  const timestamp = new Date(value).getTime();
-
-  if (!Number.isFinite(timestamp)) return '';
+  if (timestamp === null) return '';
 
   return new Date(timestamp).toISOString();
+}
+
+function parseAlbionTimestamp(value: string | undefined): number | null {
+  if (!value || value.startsWith('0001-01-01')) return null;
+
+  const trimmed = value.trim();
+  const normalized = /(?:z|[+-]\d{2}:?\d{2})$/i.test(trimmed) ? trimmed : `${trimmed}Z`;
+  const timestamp = new Date(normalized).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : null;
 }

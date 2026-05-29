@@ -106,6 +106,8 @@ const BLACK_MARKET_WIDE_MIN_TOTAL_PROFIT = 1000;
 const BLACK_MARKET_SAFE_MIN_TOTAL_PROFIT = 5000;
 const BLACK_MARKET_HIGH_PROFIT_MIN_TOTAL_PROFIT = 50_000;
 const BLACK_MARKET_FRESH_ONLY_DEFAULT_HOURS = 24;
+const EXPANDED_MAX_DATA_AGE_HOURS = 2160;
+const UNKNOWN_DATA_AGE_FOR_SCORING_HOURS = EXPANDED_MAX_DATA_AGE_HOURS + 1;
 const POTIONS_CATEGORY: ItemCategory = 'Po\u00e7\u00f5es';
 const REAL_WATCHLIST_FALLBACK_CATEGORIES: ItemCategory[] = [
   'Armas',
@@ -349,8 +351,10 @@ export async function GET(request: Request) {
       }),
       filters.sortBy,
     );
+    const shouldDiversifyBlackMarket =
+      filters.type === 'black-market' && filters.sortBy !== 'buyCity' && filters.sortBy !== 'sellCity';
     const opportunities = (
-      filters.type === 'black-market'
+      shouldDiversifyBlackMarket
         ? prioritizeBlackMarketFirstPageDiversity(sortedOpportunities)
         : sortedOpportunities
     ).slice(0, MAX_RESULTS);
@@ -662,12 +666,31 @@ function metadataFromDebug(debug: OpportunityRadarDebug): OpportunityErrorMetada
     staticCatalogItemsCount: debug.staticCatalogItemsCount,
     apiReturnedRows: debug.apiReturnedRows,
     rawCandidatesCount: debug.rawCandidatesCount,
+    afterGrossProfitCount: debug.afterGrossProfitCount,
     afterPositiveProfitCount: debug.afterPositiveProfitCount,
     afterMinProfitCount: debug.afterMinProfitCount,
     afterMinMarginCount: debug.afterMinMarginCount,
+    afterAgeFilterCount: debug.afterAgeFilterCount,
+    afterSuspiciousFilterCount: debug.afterSuspiciousFilterCount,
     afterMicroFlipFilterCount: debug.afterMicroFlipFilterCount,
+    noPriceData: debug.rejectionReasons.noPriceData,
+    noSellPrice: debug.rejectionReasons.noSellPrice,
+    noBuyPrice: debug.rejectionReasons.noBuyPrice,
+    sameCity: debug.rejectionReasons.sameCity,
+    negativeProfit: debug.rejectionReasons.negativeProfit,
     belowMinProfit: debug.rejectionReasons.belowMinProfit,
+    belowMinMargin: debug.rejectionReasons.belowMinMargin,
+    tooOld: debug.rejectionReasons.tooOld,
+    staleBuyData: debug.rejectionReasons.staleBuyData,
+    staleSellData: debug.rejectionReasons.staleSellData,
+    missingBuyDate: debug.rejectionReasons.missingBuyDate,
+    missingSellDate: debug.rejectionReasons.missingSellDate,
+    suspicious: debug.rejectionReasons.suspicious,
     microFlip: debug.rejectionReasons.microFlip,
+    belowEstimatedProfit: debug.rejectionReasons.belowEstimatedProfit,
+    lowConfidence: debug.rejectionReasons.lowConfidence,
+    highRisk: debug.rejectionReasons.highRisk,
+    weakOpportunity: debug.rejectionReasons.weakOpportunity,
     staleBlackMarketData: debug.rejectionReasons.staleBlackMarketData,
     finalOpportunitiesCount: debug.finalOpportunitiesCount,
   };
@@ -1310,33 +1333,50 @@ function buildOpportunity({
       : sell.sellUpdatedAt || sell.updatedAt;
   const buyAgeHours = getAgeHours(buyUpdatedAt);
   const sellAgeHours = getAgeHours(sellUpdatedAt);
-  const maxDataAgeHours = Math.max(buyAgeHours, sellAgeHours);
-
-  if (!Number.isFinite(maxDataAgeHours) || maxDataAgeHours > filters.maxAgeHours) {
-    debug.rejectionReasons.tooOld += 1;
-    return null;
-  }
-
-  if (
-    type === 'black-market' &&
-    filters.blackMarketFreshOnly &&
-    (!Number.isFinite(sellAgeHours) || sellAgeHours > filters.blackMarketMaxAgeHours)
-  ) {
-    debug.rejectionReasons.staleBlackMarketData += 1;
-    return null;
-  }
-  debug.afterAgeFilterCount += 1;
+  const knownAgeHours = [buyAgeHours, sellAgeHours].filter((age): age is number => age !== null);
+  const maxKnownDataAgeHours = knownAgeHours.length > 0 ? Math.max(...knownAgeHours) : undefined;
+  const scoringDataAgeHours = maxKnownDataAgeHours ?? UNKNOWN_DATA_AGE_FOR_SCORING_HOURS;
 
   const profit =
     type === 'quick-sale' || type === 'black-market'
       ? calculateInstantSellProfitBreakdown(buyPrice, sellPrice, hasAlbionPremium)
       : calculateSellOrderProfitBreakdown(buyPrice, sellPrice, hasAlbionPremium);
 
+  if (profit.grossProfit > 0) {
+    debug.afterGrossProfitCount += 1;
+  }
+
   if (profit.netProfit <= 0) {
     debug.rejectionReasons.negativeProfit += 1;
     return null;
   }
   debug.afterPositiveProfitCount += 1;
+
+  if (buyAgeHours === null) debug.rejectionReasons.missingBuyDate += 1;
+  if (sellAgeHours === null) debug.rejectionReasons.missingSellDate += 1;
+
+  if (buyAgeHours !== null && buyAgeHours > filters.maxAgeHours) {
+    debug.rejectionReasons.staleBuyData += 1;
+    debug.rejectionReasons.tooOld += 1;
+    return null;
+  }
+
+  if (type === 'black-market') {
+    const blackMarketAgeLimit = filters.blackMarketFreshOnly
+      ? filters.blackMarketMaxAgeHours
+      : filters.maxAgeHours;
+
+    if (sellAgeHours !== null && sellAgeHours > blackMarketAgeLimit) {
+      debug.rejectionReasons.staleBlackMarketData += 1;
+      debug.rejectionReasons.tooOld += 1;
+      return null;
+    }
+  } else if (sellAgeHours !== null && sellAgeHours > filters.maxAgeHours) {
+    debug.rejectionReasons.staleSellData += 1;
+    debug.rejectionReasons.tooOld += 1;
+    return null;
+  }
+  debug.afterAgeFilterCount += 1;
 
   if (profit.netProfit < filters.minProfit) {
     debug.rejectionReasons.belowMinProfit += 1;
@@ -1357,7 +1397,7 @@ function buildOpportunity({
       sellPrice,
       margin: profit.margin,
       netProfit: profit.netProfit,
-      maxDataAgeHours,
+      maxDataAgeHours: maxKnownDataAgeHours ?? 0,
       buyCity: buy.city,
       sellCity: sell.city,
     },
@@ -1372,8 +1412,8 @@ function buildOpportunity({
 
   const confidence = calculateConfidence({
     type,
-    buyAgeHours,
-    sellAgeHours,
+    buyAgeHours: buyAgeHours ?? UNKNOWN_DATA_AGE_FOR_SCORING_HOURS,
+    sellAgeHours: sellAgeHours ?? UNKNOWN_DATA_AGE_FOR_SCORING_HOURS,
     margin: profit.margin,
     netProfit: profit.netProfit,
     sanity,
@@ -1382,7 +1422,7 @@ function buildOpportunity({
     type,
     margin: profit.margin,
     netProfit: profit.netProfit,
-    maxDataAgeHours,
+    maxDataAgeHours: scoringDataAgeHours,
     buyCity: buy.city,
     sellCity: sell.city,
     investment: buyPrice,
@@ -1429,7 +1469,7 @@ function buildOpportunity({
   });
   const estimatedLiquidity = calculateEstimatedLiquidity({
     type,
-    blackMarketAgeHours: sellAgeHours,
+    blackMarketAgeHours: sellAgeHours ?? UNKNOWN_DATA_AGE_FOR_SCORING_HOURS,
     category: item.category,
     itemId: item.uniqueName,
     hasBlackMarketBuyOrder: sell.buyPriceMax > 0,
@@ -1466,7 +1506,7 @@ function buildOpportunity({
     netProfit: profit.netProfit,
     estimatedNetProfit,
     margin: profit.margin,
-    maxDataAgeHours,
+    maxDataAgeHours: scoringDataAgeHours,
     risk: risk.level,
     buyPrice,
     budget,
@@ -1480,7 +1520,7 @@ function buildOpportunity({
     confidence: confidence.level,
     sanity,
     estimatedLiquidity: estimatedLiquidity.level,
-    blackMarketAgeHours: sellAgeHours,
+    blackMarketAgeHours: sellAgeHours ?? UNKNOWN_DATA_AGE_FOR_SCORING_HOURS,
   });
 
   return {
@@ -1500,7 +1540,7 @@ function buildOpportunity({
     sellPriceReference,
     blackMarketBuyPrice: type === 'black-market' ? sell.buyPriceMax : undefined,
     blackMarketUpdatedAt: type === 'black-market' ? sellUpdatedAt : undefined,
-    blackMarketAgeHours: type === 'black-market' ? sellAgeHours : undefined,
+    blackMarketAgeHours: type === 'black-market' ? sellAgeHours ?? undefined : undefined,
     estimatedLiquidity: type === 'black-market' ? estimatedLiquidity.level : undefined,
     estimatedLiquidityReasons: type === 'black-market' ? estimatedLiquidity.reasons : undefined,
     quantityAvailableLabel: type === 'black-market' ? 'não informada pela API' : undefined,
@@ -1537,10 +1577,10 @@ function buildOpportunity({
     buyPriceOutlier: sanity.buyPriceOutlier,
     buyUpdatedAt,
     sellUpdatedAt,
-    maxDataAgeHours,
+    maxDataAgeHours: maxKnownDataAgeHours,
     server,
     sourceHost,
-    updatedAt: getOldestCriticalUpdate([buyUpdatedAt, sellUpdatedAt]),
+    updatedAt: getOldestCriticalUpdate([buyUpdatedAt, sellUpdatedAt]) || new Date(0).toISOString(),
     dataSource: 'live',
     priceTable: item.prices,
   };
@@ -2106,6 +2146,12 @@ function calculateOpportunityScore({
 
 function sortOpportunities(opportunities: Opportunity[], sortBy: OpportunitySortBy): Opportunity[] {
   return [...opportunities].sort((a, b) => {
+    if (sortBy === 'buyCity' || sortBy === 'sellCity') {
+      const cityComparison = compareOpportunityCity(a, b, sortBy);
+
+      if (cityComparison !== 0) return cityComparison;
+    }
+
     if (a.isSuspicious !== b.isSuspicious) return a.isSuspicious ? 1 : -1;
     if (a.isMicroFlip !== b.isMicroFlip) return a.isMicroFlip ? 1 : -1;
     if (worthRank(a.worthLevel) !== worthRank(b.worthLevel)) {
@@ -2119,6 +2165,25 @@ function sortOpportunities(opportunities: Opportunity[], sortBy: OpportunitySort
 
     return (b.score ?? 0) - (a.score ?? 0);
   });
+}
+
+function compareOpportunityCity(a: Opportunity, b: Opportunity, sortBy: 'buyCity' | 'sellCity'): number {
+  const cityA = sortBy === 'buyCity' ? a.buyCity : a.sellCity;
+  const cityB = sortBy === 'buyCity' ? b.buyCity : b.sellCity;
+  const cityRankA = ALBION_CITIES.indexOf(cityA);
+  const cityRankB = ALBION_CITIES.indexOf(cityB);
+  const rankA = cityRankA === -1 ? Number.MAX_SAFE_INTEGER : cityRankA;
+  const rankB = cityRankB === -1 ? Number.MAX_SAFE_INTEGER : cityRankB;
+
+  if (rankA !== rankB) return rankA - rankB;
+  if (cityA !== cityB) return cityA.localeCompare(cityB, 'pt-BR');
+  if (a.isSuspicious !== b.isSuspicious) return a.isSuspicious ? 1 : -1;
+  if (a.isMicroFlip !== b.isMicroFlip) return a.isMicroFlip ? 1 : -1;
+  if (worthRank(a.worthLevel) !== worthRank(b.worthLevel)) {
+    return worthRank(b.worthLevel) - worthRank(a.worthLevel);
+  }
+
+  return b.netProfit - a.netProfit;
 }
 
 function prioritizeBlackMarketFirstPageDiversity(opportunities: Opportunity[]): Opportunity[] {
@@ -2201,6 +2266,7 @@ function createOpportunityDebug({
     itemsWithSellPrice: 0,
     itemsWithBuyPrice: 0,
     rawCandidatesCount: 0,
+    afterGrossProfitCount: 0,
     afterPositiveProfitCount: 0,
     afterMinProfitCount: 0,
     afterMinMarginCount: 0,
@@ -2225,6 +2291,10 @@ function createEmptyRejectionReasons(): OpportunityRejectionReasons {
     belowMinProfit: 0,
     belowMinMargin: 0,
     tooOld: 0,
+    staleBuyData: 0,
+    staleSellData: 0,
+    missingBuyDate: 0,
+    missingSellDate: 0,
     suspicious: 0,
     microFlip: 0,
     invalidItemId: 0,
@@ -2247,6 +2317,9 @@ function collectItemPriceDebug(debug: OpportunityRadarDebug, item: Item) {
 
 function buildEmptyRadarMessage(debug: OpportunityRadarDebug): string {
   const reasons = debug.rejectionReasons;
+  const blockingFilterMessage = buildBlockingFilterMessage(debug);
+
+  if (blockingFilterMessage) return blockingFilterMessage;
 
   if (debug.selectedMode === 'black-market') {
     if (debug.validItemIdsCount === 0) return 'Nenhum item válido encontrado para análise no Mercado Negro.';
@@ -2255,6 +2328,9 @@ function buildEmptyRadarMessage(debug: OpportunityRadarDebug): string {
     }
     if (reasons.staleBlackMarketData > 0) {
       return 'As oportunidades do Mercado Negro foram removidas porque o dado do BM estava antigo.';
+    }
+    if (reasons.staleBuyData > 0) {
+      return 'As oportunidades do Mercado Negro foram removidas porque o dado de compra nas cidades está antigo.';
     }
     if (reasons.belowMinProfit > 0) return 'Nenhuma oportunidade do Mercado Negro passou pelo lucro mínimo atual.';
     if (reasons.microFlip > 0) return 'Encontramos apenas micro-oportunidades no Mercado Negro; elas estão ocultas.';
@@ -2275,10 +2351,40 @@ function buildEmptyRadarMessage(debug: OpportunityRadarDebug): string {
   if (reasons.microFlip > 0 && reasons.microFlip >= reasons.belowMinProfit) {
     return 'Encontramos apenas micro-oportunidades; elas estão ocultas pelos filtros atuais.';
   }
+  if (reasons.staleBuyData > 0) return 'As oportunidades candidatas dependiam de dados de compra antigos.';
+  if (reasons.staleSellData > 0) return 'As oportunidades candidatas dependiam de dados de venda antigos.';
   if (reasons.tooOld > 0) return 'As oportunidades candidatas dependiam de dados mais antigos que o limite configurado.';
   if (reasons.suspicious > 0) return 'As oportunidades encontradas foram classificadas como suspeitas ou outliers.';
 
   return 'O radar analisou os itens e rotas, mas nenhuma oportunidade passou pelos filtros atuais.';
+}
+
+function buildBlockingFilterMessage(debug: OpportunityRadarDebug): string | null {
+  if (debug.afterPositiveProfitCount <= 0 || debug.finalOpportunitiesCount > 0) return null;
+
+  const reasons = debug.rejectionReasons;
+  const activeReasons = [
+    { count: reasons.belowMinProfit, label: 'lucro mínimo' },
+    { count: reasons.belowMinMargin, label: 'margem mínima' },
+    { count: reasons.staleBuyData, label: 'idade do dado de compra' },
+    { count: reasons.staleSellData, label: 'idade do dado de venda' },
+    { count: reasons.staleBlackMarketData, label: 'idade dos dados BM' },
+    { count: reasons.suspicious, label: 'suspeita/outlier' },
+    { count: reasons.lowConfidence, label: 'confiança mínima' },
+    { count: reasons.highRisk, label: 'risco máximo' },
+    { count: reasons.microFlip, label: 'micro-flip' },
+    { count: reasons.belowEstimatedProfit, label: 'lucro total mínimo' },
+    { count: reasons.weakOpportunity, label: 'classificação prática fraca' },
+  ]
+    .filter((reason) => reason.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .map((reason) => reason.label);
+
+  if (activeReasons.length === 0) return null;
+
+  const modeLabel = debug.selectedMode === 'black-market' ? ' do Mercado Negro' : '';
+
+  return `As oportunidades${modeLabel} tiveram lucro positivo, mas foram removidas por ${activeReasons.slice(0, 4).join(', ')}.`;
 }
 
 function logDevelopmentDebug(payload: OpportunityErrorMetadata) {
@@ -2358,7 +2464,17 @@ function parseRisk(value: string | null): RiskLevel | 'all' | null {
 }
 
 function parseSortBy(value: string | null): OpportunitySortBy {
-  if (value === 'profit' || value === 'margin' || value === 'recent' || value === 'investment') return value;
+  if (
+    value === 'profit' ||
+    value === 'margin' ||
+    value === 'buyCity' ||
+    value === 'sellCity' ||
+    value === 'recent' ||
+    value === 'investment'
+  ) {
+    return value;
+  }
+
   return 'score';
 }
 
@@ -2457,12 +2573,22 @@ function parseBoolean(value: string | null): boolean {
   return value === 'true' || value === '1';
 }
 
-function getAgeHours(value: string): number {
-  const timestamp = new Date(value).getTime();
+function getAgeHours(value: string | undefined): number | null {
+  const timestamp = parseAlbionTimestamp(value);
 
-  if (!Number.isFinite(timestamp)) return Number.POSITIVE_INFINITY;
+  if (timestamp === null) return null;
 
   return Math.max(0, (Date.now() - timestamp) / 3_600_000);
+}
+
+function parseAlbionTimestamp(value: string | undefined): number | null {
+  if (!value || value.startsWith('0001-01-01')) return null;
+
+  const trimmed = value.trim();
+  const normalized = /(?:z|[+-]\d{2}:?\d{2})$/i.test(trimmed) ? trimmed : `${trimmed}Z`;
+  const timestamp = new Date(normalized).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function getOldestCriticalUpdate(values: string[]): string {

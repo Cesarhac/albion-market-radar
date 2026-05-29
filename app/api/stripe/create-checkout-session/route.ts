@@ -133,12 +133,15 @@ export async function POST(request: Request) {
 
   const metadata = {
     supabaseUserId: user.id,
+    user_id: user.id,
     playerName,
     product: 'pro_monthly',
   };
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
+    allow_promotion_codes: true,
+    client_reference_id: user.id,
     customer: customerId,
     line_items: [
       {

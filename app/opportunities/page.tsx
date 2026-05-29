@@ -64,15 +64,7 @@ import type {
   Tier,
 } from '@/types/albion';
 import {
-  DEFAULT_MAX_DATA_AGE_HOURS,
-  DEFAULT_MIN_ESTIMATED_PROFIT,
-  DEFAULT_MIN_OPPORTUNITY_MARGIN,
-  DEFAULT_MIN_OPPORTUNITY_PROFIT,
   OPPORTUNITY_SORT_OPTIONS,
-  PRO_DEFAULT_MIN_ESTIMATED_PROFIT,
-  PRO_DEFAULT_MAX_DATA_AGE_HOURS,
-  PRO_DEFAULT_MIN_OPPORTUNITY_MARGIN,
-  PRO_DEFAULT_MIN_OPPORTUNITY_PROFIT,
   confidenceLabel,
   opportunityTypeLabel,
   scoreLabelText,
@@ -124,6 +116,15 @@ type RadarPresetId =
   | 'recursos'
   | 'iniciante';
 type RadarScanDepth = 'pro' | 'deep' | 'quick_pro' | 'quick_deep' | 'black_market_pro' | 'black_market_deep';
+type RadarRemovalCounter = {
+  key: string;
+  label: string;
+  count: number;
+  blocksAfterPositive?: boolean;
+};
+
+const WIDE_PROFILE_MAX_DATA_AGE_HOURS = 720;
+const EXPANDED_MAX_DATA_AGE_HOURS = 2160;
 
 const RADAR_PRESETS: Array<{
   id: RadarPresetId;
@@ -315,6 +316,34 @@ const BLACK_MARKET_PROFILE_OPTIONS: Array<{ value: OpportunityBlackMarketProfile
   { value: 'low_risk', label: 'Baixo risco' },
 ];
 
+const PRO_INITIAL_RADAR_STATE = {
+  activePreset: 'bmAmplo' as RadarPresetId,
+  type: 'black-market' as OpportunityTypeFilter,
+  category: 'all' as CategoryFilter,
+  tier: 'all' as TierFilter,
+  enchantment: 'all' as EnchantmentFilter,
+  quality: 'Normal' as QualityFilter,
+  buyCity: 'all' as CityFilter,
+  sellCity: 'all' as CityFilter,
+  minProfit: 1000,
+  minMargin: 2,
+  minEstimatedProfit: 0,
+  maxAgeHours: WIDE_PROFILE_MAX_DATA_AGE_HOURS,
+  maxRisk: 'high' as RiskMaxFilter,
+  includeBlackMarket: true,
+  includeLowConfidence: true,
+  includeSuspicious: false,
+  includeMicroFlips: false,
+  sortBy: 'score' as OpportunitySortBy,
+  minConfidence: 'all' as OpportunityConfidence | 'all',
+  watchlistMode: 'extended' as OpportunityWatchlistMode,
+  scanDepth: 'black_market_pro' as RadarScanDepth,
+  quickProfile: 'safe' as OpportunityQuickProfile,
+  blackMarketProfile: 'wide' as OpportunityBlackMarketProfile,
+  blackMarketFreshOnly: false,
+  blackMarketMaxAgeHours: WIDE_PROFILE_MAX_DATA_AGE_HOURS,
+};
+
 function blackMarketProfileLabel(profile: OpportunityBlackMarketProfile): string {
   if (profile === 'wide') return 'Amplo';
   if (profile === 'high_profit') return 'Alto lucro';
@@ -385,32 +414,32 @@ export default function OpportunitiesPage() {
   const canSaveFilters = isPro && entitlements.maxSavedFilters > 0;
   const isCompact = settings.interfaceDensity === 'compact';
   const [serverOverride, setServerOverride] = React.useState<ServerRegion | null>(null);
-  const [type, setType] = React.useState<OpportunityTypeFilter>('black-market');
-  const [category, setCategory] = React.useState<CategoryFilter>('all');
-  const [tier, setTier] = React.useState<TierFilter>('all');
-  const [enchantment, setEnchantment] = React.useState<EnchantmentFilter>('all');
-  const [quality, setQuality] = React.useState<QualityFilter>('Normal');
-  const [buyCity, setBuyCity] = React.useState<CityFilter>('all');
-  const [sellCity, setSellCity] = React.useState<CityFilter>('all');
-  const [minProfit, setMinProfit] = React.useState(DEFAULT_MIN_OPPORTUNITY_PROFIT);
-  const [minMargin, setMinMargin] = React.useState(DEFAULT_MIN_OPPORTUNITY_MARGIN);
-  const [minEstimatedProfit, setMinEstimatedProfit] = React.useState(DEFAULT_MIN_ESTIMATED_PROFIT);
-  const [maxAgeHours, setMaxAgeHours] = React.useState(DEFAULT_MAX_DATA_AGE_HOURS);
-  const [maxRisk, setMaxRisk] = React.useState<RiskMaxFilter>('high');
+  const [type, setType] = React.useState<OpportunityTypeFilter>(PRO_INITIAL_RADAR_STATE.type);
+  const [category, setCategory] = React.useState<CategoryFilter>(PRO_INITIAL_RADAR_STATE.category);
+  const [tier, setTier] = React.useState<TierFilter>(PRO_INITIAL_RADAR_STATE.tier);
+  const [enchantment, setEnchantment] = React.useState<EnchantmentFilter>(PRO_INITIAL_RADAR_STATE.enchantment);
+  const [quality, setQuality] = React.useState<QualityFilter>(PRO_INITIAL_RADAR_STATE.quality);
+  const [buyCity, setBuyCity] = React.useState<CityFilter>(PRO_INITIAL_RADAR_STATE.buyCity);
+  const [sellCity, setSellCity] = React.useState<CityFilter>(PRO_INITIAL_RADAR_STATE.sellCity);
+  const [minProfit, setMinProfit] = React.useState(PRO_INITIAL_RADAR_STATE.minProfit);
+  const [minMargin, setMinMargin] = React.useState(PRO_INITIAL_RADAR_STATE.minMargin);
+  const [minEstimatedProfit, setMinEstimatedProfit] = React.useState(PRO_INITIAL_RADAR_STATE.minEstimatedProfit);
+  const [maxAgeHours, setMaxAgeHours] = React.useState(PRO_INITIAL_RADAR_STATE.maxAgeHours);
+  const [maxRisk, setMaxRisk] = React.useState<RiskMaxFilter>(PRO_INITIAL_RADAR_STATE.maxRisk);
   const [budget, setBudget] = React.useState('');
-  const [includeBlackMarket, setIncludeBlackMarket] = React.useState(false);
-  const [includeLowConfidence, setIncludeLowConfidence] = React.useState(false);
-  const [includeSuspicious, setIncludeSuspicious] = React.useState(false);
-  const [includeMicroFlips, setIncludeMicroFlips] = React.useState(false);
-  const [sortBy, setSortBy] = React.useState<OpportunitySortBy>('score');
-  const [minConfidence, setMinConfidence] = React.useState<OpportunityConfidence | 'all'>('all');
-  const [watchlistMode, setWatchlistMode] = React.useState<OpportunityWatchlistMode>('extended');
-  const [scanDepth, setScanDepth] = React.useState<RadarScanDepth>('black_market_pro');
-  const [quickProfile, setQuickProfile] = React.useState<OpportunityQuickProfile>('safe');
-  const [blackMarketProfile, setBlackMarketProfile] = React.useState<OpportunityBlackMarketProfile>('safe');
-  const [blackMarketFreshOnly, setBlackMarketFreshOnly] = React.useState(true);
-  const [blackMarketMaxAgeHours, setBlackMarketMaxAgeHours] = React.useState(24);
-  const [activePreset, setActivePreset] = React.useState<RadarPresetId>('mercadoNegro');
+  const [includeBlackMarket, setIncludeBlackMarket] = React.useState(PRO_INITIAL_RADAR_STATE.includeBlackMarket);
+  const [includeLowConfidence, setIncludeLowConfidence] = React.useState(PRO_INITIAL_RADAR_STATE.includeLowConfidence);
+  const [includeSuspicious, setIncludeSuspicious] = React.useState(PRO_INITIAL_RADAR_STATE.includeSuspicious);
+  const [includeMicroFlips, setIncludeMicroFlips] = React.useState(PRO_INITIAL_RADAR_STATE.includeMicroFlips);
+  const [sortBy, setSortBy] = React.useState<OpportunitySortBy>(PRO_INITIAL_RADAR_STATE.sortBy);
+  const [minConfidence, setMinConfidence] = React.useState<OpportunityConfidence | 'all'>(PRO_INITIAL_RADAR_STATE.minConfidence);
+  const [watchlistMode, setWatchlistMode] = React.useState<OpportunityWatchlistMode>(PRO_INITIAL_RADAR_STATE.watchlistMode);
+  const [scanDepth, setScanDepth] = React.useState<RadarScanDepth>(PRO_INITIAL_RADAR_STATE.scanDepth);
+  const [quickProfile, setQuickProfile] = React.useState<OpportunityQuickProfile>(PRO_INITIAL_RADAR_STATE.quickProfile);
+  const [blackMarketProfile, setBlackMarketProfile] = React.useState<OpportunityBlackMarketProfile>(PRO_INITIAL_RADAR_STATE.blackMarketProfile);
+  const [blackMarketFreshOnly, setBlackMarketFreshOnly] = React.useState(PRO_INITIAL_RADAR_STATE.blackMarketFreshOnly);
+  const [blackMarketMaxAgeHours, setBlackMarketMaxAgeHours] = React.useState(PRO_INITIAL_RADAR_STATE.blackMarketMaxAgeHours);
+  const [activePreset, setActivePreset] = React.useState<RadarPresetId>(PRO_INITIAL_RADAR_STATE.activePreset);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [viewMode, setViewMode] = React.useState<'cards' | 'list'>('cards');
   const [displayLimit, setDisplayLimit] = React.useState(25);
@@ -426,43 +455,6 @@ export default function OpportunitiesPage() {
   const hasAlbionPremium = settings.hasAlbionPremium;
   const transactionTaxRate = getTransactionTaxRate(hasAlbionPremium);
   const sellOrderTotalFeeRate = getSellOrderTotalFeeRate(hasAlbionPremium);
-  const didApplyPlanDefaults = React.useRef(false);
-
-  React.useEffect(() => {
-    if (didApplyPlanDefaults.current) return;
-    if (!user) return;
-
-    didApplyPlanDefaults.current = true;
-
-    queueMicrotask(() => {
-      if (isPro) {
-        setActivePreset('mercadoNegro');
-        setMinProfit(5000);
-        setMinMargin(PRO_DEFAULT_MIN_OPPORTUNITY_MARGIN);
-        setMinEstimatedProfit(10_000);
-        setMaxAgeHours(24);
-        setType('black-market');
-        setQuickProfile('safe');
-        setBlackMarketProfile('safe');
-        setBlackMarketFreshOnly(true);
-        setBlackMarketMaxAgeHours(24);
-        setMaxRisk('medium');
-        setMinConfidence('medium');
-        setIncludeBlackMarket(true);
-        setSortBy('score');
-        setWatchlistMode('extended');
-        setScanDepth('black_market_pro');
-        return;
-      }
-
-      setActivePreset('iniciante');
-      setType('all');
-      setMinProfit(DEFAULT_MIN_OPPORTUNITY_PROFIT);
-      setMinMargin(DEFAULT_MIN_OPPORTUNITY_MARGIN);
-      setMinEstimatedProfit(DEFAULT_MIN_ESTIMATED_PROFIT);
-      setMaxAgeHours(DEFAULT_MAX_DATA_AGE_HOURS);
-    });
-  }, [isPro, user]);
 
   const filters = React.useMemo<OpportunityFilters>(
     () => ({
@@ -486,7 +478,7 @@ export default function OpportunitiesPage() {
       blackMarketMaxAgeHours,
       minEstimatedProfit,
       sortBy: isPro ? sortBy : 'score',
-      minConfidence: isPro ? minConfidence : 'all',
+      minConfidence: isPro ? (includeLowConfidence ? 'all' : minConfidence) : 'all',
       watchlistMode: isPro ? watchlistMode : ('basic' as const),
       plan: isPro ? ('pro' as const) : ('free' as const),
       scanDepth: isPro ? scanDepth : ('basic' as const),
@@ -628,6 +620,11 @@ export default function OpportunitiesPage() {
     () => opportunities.slice(0, displayLimit),
     [displayLimit, opportunities],
   );
+  const cityGroupSortBy = sortBy === 'buyCity' || sortBy === 'sellCity' ? sortBy : null;
+  const visibleOpportunityGroups = React.useMemo(
+    () => groupOpportunitiesByCity(visibleOpportunities, cityGroupSortBy),
+    [cityGroupSortBy, visibleOpportunities],
+  );
   const usefulOpportunities = React.useMemo(
     () => opportunities.filter((opportunity) => opportunity.worthLevel === 'boa' || opportunity.worthLevel === 'excelente'),
     [opportunities],
@@ -662,6 +659,8 @@ export default function OpportunitiesPage() {
   const validItemsCount = radar?.debug?.validItemIdsCount ?? metadataNumber(radarError?.metadata?.validItemIdsCount);
   const apiReturnedRows = radar?.debug?.apiReturnedRows ?? metadataNumber(radarError?.metadata?.apiReturnedRows);
   const rawCandidatesCount = radar?.debug?.rawCandidatesCount ?? metadataNumber(radarError?.metadata?.rawCandidatesCount);
+  const grossPositiveCandidatesCount =
+    radar?.debug?.afterGrossProfitCount ?? metadataNumber(radarError?.metadata?.afterGrossProfitCount);
   const finalOpportunitiesCount =
     radar?.debug?.finalOpportunitiesCount ?? metadataNumber(radarError?.metadata?.finalOpportunitiesCount);
   const positiveCandidatesCount =
@@ -673,6 +672,108 @@ export default function OpportunitiesPage() {
   const removedByStaleBlackMarketCount =
     radar?.debug?.rejectionReasons?.staleBlackMarketData ??
     metadataNumber(radarError?.metadata?.staleBlackMarketData);
+  const removedByMinMarginCount =
+    radar?.debug?.rejectionReasons?.belowMinMargin ?? metadataNumber(radarError?.metadata?.belowMinMargin);
+  const removedByStaleBuyCount =
+    radar?.debug?.rejectionReasons?.staleBuyData ?? metadataNumber(radarError?.metadata?.staleBuyData);
+  const removedByStaleSellCount =
+    radar?.debug?.rejectionReasons?.staleSellData ?? metadataNumber(radarError?.metadata?.staleSellData);
+  const missingBuyDateCount =
+    radar?.debug?.rejectionReasons?.missingBuyDate ?? metadataNumber(radarError?.metadata?.missingBuyDate);
+  const missingSellDateCount =
+    radar?.debug?.rejectionReasons?.missingSellDate ?? metadataNumber(radarError?.metadata?.missingSellDate);
+  const removedBySuspiciousCount =
+    radar?.debug?.rejectionReasons?.suspicious ?? metadataNumber(radarError?.metadata?.suspicious);
+  const removedByEstimatedProfitCount =
+    radar?.debug?.rejectionReasons?.belowEstimatedProfit ??
+    metadataNumber(radarError?.metadata?.belowEstimatedProfit);
+  const removedByLowConfidenceCount =
+    radar?.debug?.rejectionReasons?.lowConfidence ?? metadataNumber(radarError?.metadata?.lowConfidence);
+  const removedByHighRiskCount =
+    radar?.debug?.rejectionReasons?.highRisk ?? metadataNumber(radarError?.metadata?.highRisk);
+  const removedByWeakOpportunityCount =
+    radar?.debug?.rejectionReasons?.weakOpportunity ?? metadataNumber(radarError?.metadata?.weakOpportunity);
+  const removedByNegativeProfitCount =
+    radar?.debug?.rejectionReasons?.negativeProfit ?? metadataNumber(radarError?.metadata?.negativeProfit);
+  const removedBySameCityCount =
+    radar?.debug?.rejectionReasons?.sameCity ?? metadataNumber(radarError?.metadata?.sameCity);
+  const removedByNoPriceDataCount =
+    radar?.debug?.rejectionReasons?.noPriceData ?? metadataNumber(radarError?.metadata?.noPriceData);
+  const removedByNoSellPriceCount =
+    radar?.debug?.rejectionReasons?.noSellPrice ?? metadataNumber(radarError?.metadata?.noSellPrice);
+  const removedByNoBuyPriceCount =
+    radar?.debug?.rejectionReasons?.noBuyPrice ?? metadataNumber(radarError?.metadata?.noBuyPrice);
+  const removedByMissingPriceCount =
+    removedByNoPriceDataCount + removedByNoSellPriceCount + removedByNoBuyPriceCount;
+  const removalCounters = React.useMemo<RadarRemovalCounter[]>(
+    () => [
+      { key: 'noPriceData', label: 'Sem qualquer preço do item', count: removedByNoPriceDataCount },
+      { key: 'noSellPrice', label: 'Sem preço de compra', count: removedByNoSellPriceCount },
+      { key: 'noBuyPrice', label: 'Sem preço de venda/BM', count: removedByNoBuyPriceCount },
+      { key: 'sameCity', label: 'Mesma cidade', count: removedBySameCityCount },
+      { key: 'negativeProfit', label: 'Sem lucro positivo', count: removedByNegativeProfitCount },
+      { key: 'belowMinProfit', label: 'Removidos por lucro mínimo', count: removedByMinProfitCount, blocksAfterPositive: true },
+      { key: 'belowMinMargin', label: 'Removidos por margem mínima', count: removedByMinMarginCount, blocksAfterPositive: true },
+      { key: 'staleBuyData', label: 'Removidos por dado de compra antigo', count: removedByStaleBuyCount, blocksAfterPositive: true },
+      { key: 'staleSellData', label: 'Removidos por dado de venda antigo', count: removedByStaleSellCount, blocksAfterPositive: true },
+      { key: 'staleBlackMarketData', label: 'Removidos por dado BM antigo', count: removedByStaleBlackMarketCount, blocksAfterPositive: true },
+      { key: 'missingBuyDate', label: 'Compra sem data confiável', count: missingBuyDateCount },
+      { key: 'missingSellDate', label: 'Venda/BM sem data confiável', count: missingSellDateCount },
+      { key: 'suspicious', label: 'Removidos por suspeita/outlier', count: removedBySuspiciousCount, blocksAfterPositive: true },
+      { key: 'lowConfidence', label: 'Removidos por confiança mínima', count: removedByLowConfidenceCount, blocksAfterPositive: true },
+      { key: 'highRisk', label: 'Removidos por risco máximo', count: removedByHighRiskCount, blocksAfterPositive: true },
+      { key: 'microFlip', label: 'Removidos por micro-flip', count: removedByMicroFlipCount, blocksAfterPositive: true },
+      { key: 'belowEstimatedProfit', label: 'Removidos por lucro total mínimo', count: removedByEstimatedProfitCount, blocksAfterPositive: true },
+      { key: 'weakOpportunity', label: 'Removidos por classificação fraca', count: removedByWeakOpportunityCount, blocksAfterPositive: true },
+    ],
+    [
+      removedByEstimatedProfitCount,
+      removedByHighRiskCount,
+      removedByLowConfidenceCount,
+      removedByMicroFlipCount,
+      removedByMinMarginCount,
+      removedByMinProfitCount,
+      removedByNegativeProfitCount,
+      removedByNoBuyPriceCount,
+      removedByNoPriceDataCount,
+      removedByNoSellPriceCount,
+      removedBySameCityCount,
+      removedByStaleBuyCount,
+      removedByStaleBlackMarketCount,
+      removedByStaleSellCount,
+      removedBySuspiciousCount,
+      removedByWeakOpportunityCount,
+      missingBuyDateCount,
+      missingSellDateCount,
+    ],
+  );
+  const emptyOpportunityMessage = React.useMemo(() => {
+    const removedByAnyStaleData =
+      removedByStaleBuyCount + removedByStaleSellCount + removedByStaleBlackMarketCount;
+
+    if (rawCandidatesCount > 0 && removedByAnyStaleData >= Math.max(1, Math.floor(rawCandidatesCount * 0.5))) {
+      return 'A maioria das rotas foi removida porque os dados de preço estão antigos. Aumente a idade máxima permitida ou use varredura ampliada.';
+    }
+
+    if (positiveCandidatesCount > 0 && removedByMinProfitCount > 0) {
+      return 'Existem rotas com lucro positivo, mas abaixo do lucro mínimo configurado.';
+    }
+
+    if (removedByMissingPriceCount > 0 && rawCandidatesCount === 0) {
+      return 'A API não retornou preço suficiente para comparar compra e venda.';
+    }
+
+    return radar?.message;
+  }, [
+    positiveCandidatesCount,
+    radar?.message,
+    rawCandidatesCount,
+    removedByMinProfitCount,
+    removedByMissingPriceCount,
+    removedByStaleBlackMarketCount,
+    removedByStaleBuyCount,
+    removedByStaleSellCount,
+  ]);
   const errorTitle = radarError?.stage === 'plan' || radarError?.status === 403
     ? 'Acesso PRO necessário'
     : radarError?.stage === 'auth'
@@ -683,7 +784,7 @@ export default function OpportunitiesPage() {
     setActivePreset(type === 'black-market' ? 'bmAmplo' : type === 'quick-sale' ? 'trader' : 'iniciante');
     setMinProfit(type === 'black-market' || type === 'quick-sale' ? 1000 : 500);
     setMinMargin(type === 'black-market' || type === 'quick-sale' ? 2 : 0);
-    setMaxAgeHours(168);
+    setMaxAgeHours(WIDE_PROFILE_MAX_DATA_AGE_HOURS);
     setMinEstimatedProfit(0);
     setMaxRisk('all');
     setMinConfidence('all');
@@ -699,7 +800,7 @@ export default function OpportunitiesPage() {
     setQuickProfile(type === 'quick-sale' ? 'wide' : quickProfile);
     setBlackMarketProfile(type === 'black-market' ? 'wide' : blackMarketProfile);
     setBlackMarketFreshOnly(false);
-    setBlackMarketMaxAgeHours(168);
+    setBlackMarketMaxAgeHours(WIDE_PROFILE_MAX_DATA_AGE_HOURS);
     setScanDepth(type === 'black-market' ? 'black_market_pro' : type === 'quick-sale' ? 'quick_pro' : 'deep');
   }, [blackMarketProfile, quickProfile, type]);
 
@@ -718,13 +819,14 @@ export default function OpportunitiesPage() {
       setActivePreset('bmAmplo');
       setMinProfit(1000);
       setMinMargin(2);
-      setMaxAgeHours(168);
+      setMaxAgeHours(WIDE_PROFILE_MAX_DATA_AGE_HOURS);
       setMinEstimatedProfit(0);
       setMaxRisk('high');
       setMinConfidence('all');
+      setIncludeLowConfidence(true);
       setSortBy('score');
       setBlackMarketFreshOnly(false);
-      setBlackMarketMaxAgeHours(168);
+      setBlackMarketMaxAgeHours(WIDE_PROFILE_MAX_DATA_AGE_HOURS);
       setScanDepth('black_market_pro');
       return;
     }
@@ -737,6 +839,7 @@ export default function OpportunitiesPage() {
       setMinEstimatedProfit(100_000);
       setMaxRisk('high');
       setMinConfidence('medium');
+      setIncludeLowConfidence(false);
       setSortBy('profit');
       setBlackMarketFreshOnly(false);
       setBlackMarketMaxAgeHours(72);
@@ -752,6 +855,7 @@ export default function OpportunitiesPage() {
       setMinEstimatedProfit(25_000);
       setMaxRisk('medium');
       setMinConfidence('medium');
+      setIncludeLowConfidence(false);
       setSortBy('recent');
       setBlackMarketFreshOnly(true);
       setBlackMarketMaxAgeHours(12);
@@ -766,6 +870,7 @@ export default function OpportunitiesPage() {
     setMinEstimatedProfit(10_000);
     setMaxRisk('medium');
     setMinConfidence('medium');
+    setIncludeLowConfidence(false);
     setSortBy('score');
     setBlackMarketFreshOnly(true);
     setBlackMarketMaxAgeHours(24);
@@ -782,10 +887,11 @@ export default function OpportunitiesPage() {
     if (profile === 'wide') {
       setMinProfit(1000);
       setMinMargin(2);
-      setMaxAgeHours(168);
+      setMaxAgeHours(WIDE_PROFILE_MAX_DATA_AGE_HOURS);
       setMinEstimatedProfit(0);
       setMaxRisk('high');
       setMinConfidence('all');
+      setIncludeLowConfidence(true);
       setScanDepth('quick_pro');
       return;
     }
@@ -796,6 +902,7 @@ export default function OpportunitiesPage() {
     setMinEstimatedProfit(10_000);
     setMaxRisk('medium');
     setMinConfidence('medium');
+    setIncludeLowConfidence(false);
     setScanDepth('quick_pro');
   }, []);
 
@@ -943,18 +1050,30 @@ export default function OpportunitiesPage() {
       setScanDepth('quick_pro');
     }
     if (preset.apply.type === 'black-market') {
-      setBlackMarketProfile(preset.apply.blackMarketProfile ?? 'safe');
+      const nextProfile = preset.apply.blackMarketProfile ?? 'safe';
+
+      setBlackMarketProfile(nextProfile);
       setScanDepth('black_market_pro');
-      setBlackMarketFreshOnly(preset.apply.blackMarketProfile === 'safe' || preset.apply.blackMarketProfile === 'low_risk');
-      setBlackMarketMaxAgeHours(
-        preset.apply.blackMarketProfile === 'low_risk'
-          ? 12
-          : preset.apply.blackMarketProfile === 'high_profit'
+      setBlackMarketFreshOnly(nextProfile === 'safe' || nextProfile === 'low_risk');
+      setMaxAgeHours(
+        nextProfile === 'wide'
+          ? WIDE_PROFILE_MAX_DATA_AGE_HOURS
+          : nextProfile === 'high_profit'
             ? 72
-            : preset.apply.blackMarketProfile === 'wide'
-              ? 168
+            : nextProfile === 'low_risk'
+              ? 12
               : 24,
       );
+      setBlackMarketMaxAgeHours(
+        nextProfile === 'low_risk'
+          ? 12
+          : nextProfile === 'high_profit'
+            ? 72
+            : nextProfile === 'wide'
+              ? WIDE_PROFILE_MAX_DATA_AGE_HOURS
+              : 24,
+      );
+      setIncludeLowConfidence(nextProfile === 'wide');
     }
     setMinProfit(preset.apply.minProfit);
     setMinMargin(preset.apply.minMargin);
@@ -1111,7 +1230,19 @@ export default function OpportunitiesPage() {
             </SelectField>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="w-full space-y-1 sm:w-60">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Ordenar por</span>
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as OpportunitySortBy)}
+                className={cn('w-full rounded-lg border border-border-subtle bg-zinc-950 px-3 text-sm font-bold text-white outline-none focus:border-brand-primary', isCompact ? 'h-9' : 'h-10')}
+              >
+                {OPPORTUNITY_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={() => setViewMode('cards')}
@@ -1461,10 +1592,10 @@ export default function OpportunitiesPage() {
           compact={isCompact}
         />
         <StatCard
-          title={isBlackMarketMode ? 'Rotas BM avaliadas' : 'Oportunidades exibidas'}
-          value={radar?.displayedOpportunities ?? finalOpportunitiesCount}
+          title={isBlackMarketMode ? 'Rotas BM avaliadas' : 'Rotas avaliadas'}
+          value={radar?.evaluatedRoutes ?? rawCandidatesCount}
           icon={ListFilter}
-          description={`Rotas avaliadas: ${radar?.evaluatedRoutes ?? rawCandidatesCount}`}
+          description={`Oportunidades finais: ${radar?.displayedOpportunities ?? finalOpportunitiesCount}`}
           compact={isCompact}
         />
       </section>
@@ -1474,13 +1605,12 @@ export default function OpportunitiesPage() {
         validItemsCount={validItemsCount}
         apiReturnedRows={apiReturnedRows}
         rawCandidatesCount={rawCandidatesCount}
+        grossPositiveCandidatesCount={grossPositiveCandidatesCount}
         positiveCandidatesCount={positiveCandidatesCount}
-        removedByMinProfitCount={removedByMinProfitCount}
-        removedByStaleBlackMarketCount={removedByStaleBlackMarketCount}
-        removedByMicroFlipCount={removedByMicroFlipCount}
+        removalCounters={removalCounters}
         finalOpportunitiesCount={finalOpportunitiesCount}
         stage={radarError?.stage}
-        message={radar?.message}
+        message={opportunities.length === 0 ? emptyOpportunityMessage : radar?.message}
       />
 
       {errorMessage ? (
@@ -1502,25 +1632,40 @@ export default function OpportunitiesPage() {
 
       {!isLoading && !errorMessage && opportunities.length === 0 ? (
         <EmptyOpportunityState
-          message={radar?.message}
+          message={emptyOpportunityMessage}
           isBlackMarketMode={type === 'black-market'}
           onRelaxFilters={relaxFilters}
           onBlackMarketWide={() => applyBlackMarketProfile('wide')}
-          onReduceProfit={() => setMinProfit(1000)}
+          onReduceProfit={() => {
+            setActivePreset(type === 'black-market' ? 'bmAmplo' : activePreset);
+            setMinProfit(1000);
+            setMinEstimatedProfit(0);
+            setMinConfidence('all');
+            setIncludeLowConfidence(true);
+          }}
           onIncreaseBlackMarketAge={() => {
+            setActivePreset(type === 'black-market' ? 'bmAmplo' : activePreset);
             setBlackMarketFreshOnly(false);
-            setBlackMarketMaxAgeHours(168);
-            setMaxAgeHours(168);
+            setBlackMarketMaxAgeHours(EXPANDED_MAX_DATA_AGE_HOURS);
+            setMaxAgeHours(EXPANDED_MAX_DATA_AGE_HOURS);
+            setMinConfidence('all');
+            setIncludeLowConfidence(true);
           }}
           onShowMicroFlips={showMicroFlips}
           onAllModes={() => {
             setType('all');
+            setIncludeBlackMarket(true);
+            setMaxAgeHours(EXPANDED_MAX_DATA_AGE_HOURS);
             setMinConfidence('all');
+            setIncludeLowConfidence(true);
+            setScanDepth('deep');
           }}
           canRunExpandedScan={isPro}
           onExpandedScan={() => {
             setWatchlistMode('extended');
-            setMaxAgeHours(168);
+            setMaxAgeHours(EXPANDED_MAX_DATA_AGE_HOURS);
+            setMinConfidence('all');
+            setIncludeLowConfidence(true);
 
             if (type === 'quick-sale') {
               setQuickProfile('wide');
@@ -1532,9 +1677,10 @@ export default function OpportunitiesPage() {
             }
 
             if (type === 'black-market') {
+              setActivePreset('bmAmplo');
               setBlackMarketProfile('wide');
               setBlackMarketFreshOnly(false);
-              setBlackMarketMaxAgeHours(168);
+              setBlackMarketMaxAgeHours(EXPANDED_MAX_DATA_AGE_HOURS);
               setScanDepth('black_market_deep');
               setMinProfit(1000);
               setMinMargin(2);
@@ -1553,19 +1699,31 @@ export default function OpportunitiesPage() {
             <OpportunityCompactTable
               opportunities={visibleOpportunities}
               isBlackMarketMode={isBlackMarketMode}
+              cityGroupSortBy={cityGroupSortBy}
               onDetails={setSelectedOpportunity}
             />
           ) : (
             <section className={cn('space-y-4', isCompact && 'space-y-2')}>
-              {visibleOpportunities.map((opportunity) => (
-                <OpportunityCard
-                  key={opportunity.id}
-                  opportunity={opportunity}
-                  hasBudget={Boolean(filters.budget)}
-                  hasAlbionPremium={hasAlbionPremium}
-                  compact={isCompact}
-                  onDetails={setSelectedOpportunity}
-                />
+              {visibleOpportunityGroups.map((group) => (
+                <div key={group.key} className="space-y-3">
+                  {cityGroupSortBy ? (
+                    <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle pb-2 text-sm font-black text-white">
+                      <MapPin className="text-brand-primary" size={16} />
+                      <span>{group.title}</span>
+                      <span className="text-xs font-bold text-zinc-500">{group.opportunities.length} oportunidades</span>
+                    </div>
+                  ) : null}
+                  {group.opportunities.map((opportunity) => (
+                    <OpportunityCard
+                      key={opportunity.id}
+                      opportunity={opportunity}
+                      hasBudget={Boolean(filters.budget)}
+                      hasAlbionPremium={hasAlbionPremium}
+                      compact={isCompact}
+                      onDetails={setSelectedOpportunity}
+                    />
+                  ))}
+                </div>
               ))}
             </section>
           )}
@@ -1655,6 +1813,33 @@ function FreeOpportunityGate() {
       />
     </div>
   );
+}
+
+function groupOpportunitiesByCity(
+  opportunities: Opportunity[],
+  sortBy: 'buyCity' | 'sellCity' | null,
+): Array<{ key: string; title: string; opportunities: Opportunity[] }> {
+  if (!sortBy) {
+    return [{ key: 'all', title: '', opportunities }];
+  }
+
+  const groups = new Map<AlbionCity, Opportunity[]>();
+
+  opportunities.forEach((opportunity) => {
+    const city = sortBy === 'buyCity' ? opportunity.buyCity : opportunity.sellCity;
+    const group = groups.get(city) ?? [];
+
+    group.push(opportunity);
+    groups.set(city, group);
+  });
+
+  return [...groups.entries()].map(([city, group]) => ({
+    key: city,
+    title: sortBy === 'buyCity'
+      ? `Comprando em ${formatCityName(city)}`
+      : `Vendendo em ${formatCityName(city)}`,
+    opportunities: group,
+  }));
 }
 
 function OpportunityCard({
@@ -1776,12 +1961,15 @@ function OpportunityCard({
 function OpportunityCompactTable({
   opportunities,
   isBlackMarketMode,
+  cityGroupSortBy,
   onDetails,
 }: {
   opportunities: Opportunity[];
   isBlackMarketMode: boolean;
+  cityGroupSortBy: 'buyCity' | 'sellCity' | null;
   onDetails: (opportunity: Opportunity) => void;
 }) {
+  const groupedOpportunities = groupOpportunitiesByCity(opportunities, cityGroupSortBy);
   const headers = isBlackMarketMode
     ? ['Item', 'Comprar em', 'Vender no BM', 'Preço compra', 'Ordem BM', 'Lucro líquido', 'Margem', 'Score', 'Liquidez estimada', 'Dados BM', 'Risco', 'Detalhes']
     : ['Item', 'Tipo', 'Compra', 'Venda', 'Lucro', 'Margem', 'Score', 'Vale a pena?', 'Confiança', 'Risco', 'Detalhes'];
@@ -1798,7 +1986,16 @@ function OpportunityCompactTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle/70">
-            {opportunities.map((opportunity) => {
+            {groupedOpportunities.map((group) => (
+              <React.Fragment key={group.key}>
+                {cityGroupSortBy ? (
+                  <tr className="bg-zinc-950/90">
+                    <td colSpan={headers.length} className="px-3 py-2 text-xs font-black uppercase tracking-wider text-brand-primary">
+                      {group.title}
+                    </td>
+                  </tr>
+                ) : null}
+                {group.opportunities.map((opportunity) => {
               if (isBlackMarketMode) {
                 return (
                   <tr key={opportunity.id} className="hover:bg-zinc-900/60">
@@ -1869,7 +2066,9 @@ function OpportunityCompactTable({
                 </td>
               </tr>
               );
-            })}
+                })}
+              </React.Fragment>
+            ))}
           </tbody>
         </table>
       </div>
@@ -2084,10 +2283,9 @@ function RadarMetadataStrip({
   validItemsCount,
   apiReturnedRows,
   rawCandidatesCount,
+  grossPositiveCandidatesCount,
   positiveCandidatesCount,
-  removedByMinProfitCount,
-  removedByStaleBlackMarketCount,
-  removedByMicroFlipCount,
+  removalCounters,
   finalOpportunitiesCount,
   stage,
   message,
@@ -2096,23 +2294,26 @@ function RadarMetadataStrip({
   validItemsCount: number;
   apiReturnedRows: number;
   rawCandidatesCount: number;
+  grossPositiveCandidatesCount: number;
   positiveCandidatesCount: number;
-  removedByMinProfitCount: number;
-  removedByStaleBlackMarketCount: number;
-  removedByMicroFlipCount: number;
+  removalCounters: RadarRemovalCounter[];
   finalOpportunitiesCount: number;
   stage?: string;
   message?: string;
 }) {
+  const visibleRemovalCounters = removalCounters.filter((counter) => counter.count > 0 || counter.blocksAfterPositive);
+  const blockingCounters = removalCounters.filter(
+    (counter) => counter.blocksAfterPositive && counter.count > 0,
+  );
+  const shouldExplainBlockingFilters = positiveCandidatesCount > 0 && finalOpportunitiesCount === 0;
   const hasAnyMetadata =
     requestedItemsCount > 0 ||
     validItemsCount > 0 ||
     apiReturnedRows > 0 ||
     rawCandidatesCount > 0 ||
+    grossPositiveCandidatesCount > 0 ||
     positiveCandidatesCount > 0 ||
-    removedByMinProfitCount > 0 ||
-    removedByStaleBlackMarketCount > 0 ||
-    removedByMicroFlipCount > 0 ||
+    removalCounters.some((counter) => counter.count > 0) ||
     finalOpportunitiesCount > 0 ||
     Boolean(stage);
 
@@ -2125,15 +2326,24 @@ function RadarMetadataStrip({
         <span>Itens válidos: {validItemsCount}</span>
         <span>Linhas da API: {apiReturnedRows}</span>
         <span>Rotas avaliadas: {rawCandidatesCount}</span>
+        <span>Rotas com lucro bruto positivo: {grossPositiveCandidatesCount}</span>
         <span>Candidatos com lucro positivo: {positiveCandidatesCount}</span>
-        <span>Removidos por lucro mínimo: {removedByMinProfitCount}</span>
-        <span>Removidos por dado BM antigo: {removedByStaleBlackMarketCount}</span>
-        <span>Removidos por micro-flip: {removedByMicroFlipCount}</span>
+        {visibleRemovalCounters.map((counter) => (
+          <span key={counter.key}>{counter.label}: {counter.count}</span>
+        ))}
         <span>Após filtros: {finalOpportunitiesCount}</span>
         {process.env.NODE_ENV === 'development' && stage ? (
           <span className="font-bold text-status-warning">Stage: {stage}</span>
         ) : null}
       </div>
+      {shouldExplainBlockingFilters ? (
+        <p className="mt-2 font-bold text-status-warning">
+          Filtros que zeraram os candidatos positivos:{' '}
+          {blockingCounters.length > 0
+            ? blockingCounters.map((counter) => counter.label.replace('Removidos por ', '').toLowerCase()).join(', ')
+            : 'nenhum motivo contabilizado; confira dados de preço ou a etapa da consulta.'}
+        </p>
+      ) : null}
       {message ? <p className="mt-2 text-zinc-400">{message}</p> : null}
     </section>
   );

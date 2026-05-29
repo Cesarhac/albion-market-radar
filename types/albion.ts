@@ -41,7 +41,7 @@ export type OpportunityType = 'black-market' | 'quick-sale' | 'listed-resale' | 
 
 export type OpportunityConfidence = 'high' | 'medium' | 'low';
 
-export type OpportunitySortBy = 'score' | 'profit' | 'margin' | 'recent' | 'investment';
+export type OpportunitySortBy = 'score' | 'profit' | 'margin' | 'buyCity' | 'sellCity' | 'recent' | 'investment';
 export type OpportunityWatchlistMode = 'basic' | 'extended';
 export type OpportunityScanDepth =
   | 'basic'
@@ -385,6 +385,10 @@ export type OpportunityRejectionReasons = {
   belowMinProfit: number;
   belowMinMargin: number;
   tooOld: number;
+  staleBuyData: number;
+  staleSellData: number;
+  missingBuyDate: number;
+  missingSellDate: number;
   suspicious: number;
   microFlip: number;
   invalidItemId: number;
@@ -414,6 +418,7 @@ export type OpportunityRadarDebug = {
   itemsWithSellPrice: number;
   itemsWithBuyPrice: number;
   rawCandidatesCount: number;
+  afterGrossProfitCount: number;
   afterPositiveProfitCount: number;
   afterMinProfitCount: number;
   afterMinMarginCount: number;

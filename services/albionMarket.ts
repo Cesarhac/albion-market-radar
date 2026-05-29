@@ -440,6 +440,9 @@ function appendOpportunityFilterParams(params: URLSearchParams, filters: Opportu
 }
 
 function sortOpportunities(a: Opportunity, b: Opportunity, sortBy: OpportunityFilters['sortBy']) {
+  if (sortBy === 'buyCity') return compareCityThenProfit(a.buyCity, b.buyCity, a, b);
+  if (sortBy === 'sellCity') return compareCityThenProfit(a.sellCity, b.sellCity, a, b);
+
   if (a.isSuspicious !== b.isSuspicious) return a.isSuspicious ? 1 : -1;
   if (a.isMicroFlip !== b.isMicroFlip) return a.isMicroFlip ? 1 : -1;
   if (worthRank(a.worthLevel) !== worthRank(b.worthLevel)) {
@@ -452,6 +455,19 @@ function sortOpportunities(a: Opportunity, b: Opportunity, sortBy: OpportunityFi
   if (sortBy === 'investment') return (a.investment ?? a.buyPrice) - (b.investment ?? b.buyPrice);
 
   return (b.score ?? 0) - (a.score ?? 0);
+}
+
+function compareCityThenProfit(
+  cityA: Opportunity['buyCity'],
+  cityB: Opportunity['buyCity'],
+  a: Opportunity,
+  b: Opportunity,
+): number {
+  const cityCompare = cityA.localeCompare(cityB, 'pt-BR');
+
+  if (cityCompare !== 0) return cityCompare;
+
+  return b.netProfit - a.netProfit;
 }
 
 function worthRank(level: Opportunity['worthLevel']): number {

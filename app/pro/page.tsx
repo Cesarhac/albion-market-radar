@@ -22,7 +22,8 @@ import { isUserPro } from '@/src/lib/entitlements';
 import { getBrowserSupabase } from '@/src/lib/supabase/client';
 import type { SubscriptionStatus } from '@/types/albion';
 
-export const PRO_PRICE_LABEL = 'R$ 10/mês';
+export const PRO_PRICE_LABEL = 'R$14,99/mês';
+const PARTNER_COUPON_PRICE_LABEL = 'R$9,99';
 
 const proBenefits = [
   { label: 'Radar de Oportunidades exclusivo', icon: Zap },
@@ -212,6 +213,9 @@ export default function ProPage() {
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-400">
               O PRO libera ferramentas de análise e organização. O Albion Market Radar não vende prata, itens, contas ou vantagens dentro do jogo.
             </p>
+            <p className="mt-3 max-w-3xl rounded-lg border border-brand-primary/25 bg-brand-primary/10 px-3 py-2 text-sm font-bold text-brand-primary">
+              Use um cupom de parceiro no checkout para pagar {PARTNER_COUPON_PRICE_LABEL} no período promocional.
+            </p>
           </div>
 
           <div className="rounded-lg border border-border-subtle bg-zinc-950/70 p-4 text-sm lg:min-w-72">
@@ -251,7 +255,9 @@ export default function ProPage() {
           <div>
             <h2 className="text-xl font-black text-white">Benefícios PRO</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              {isPro ? 'Recursos disponíveis na sua conta.' : 'Assine por R$ 10,00 por mês e desbloqueie o radar completo.'}
+              {isPro
+                ? 'Recursos disponíveis na sua conta.'
+                : `Assine por ${PRO_PRICE_LABEL}. Com cupom de parceiro, o checkout aplica R$5,00 de desconto.`}
             </p>
           </div>
           {isPro ? <Badge variant="success">Você está no PRO</Badge> : <Badge variant="primary">{PRO_PRICE_LABEL}</Badge>}
@@ -324,7 +330,9 @@ function FreeSubscriptionPanel({
     <>
       <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">Plano PRO</p>
       <p className="mt-1 text-3xl font-black text-white">{PRO_PRICE_LABEL}</p>
-      <p className="mt-1 text-xs text-zinc-500">Assinatura mensal recorrente via Stripe.</p>
+      <p className="mt-1 text-xs text-zinc-500">
+        Assinatura mensal recorrente via Stripe. Cupom de parceiro reduz o valor promocional para R$9,99.
+      </p>
       <button
         type="button"
         onClick={onCheckout}
