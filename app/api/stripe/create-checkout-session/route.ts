@@ -9,7 +9,7 @@ import type { SubscriptionPlan, SubscriptionStatus } from '@/types/albion';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const PAYMENTS_NOT_CONFIGURED = 'Pagamentos ainda não configurados.';
+const PAYMENTS_CONFIG_INCOMPLETE = 'Configuração de pagamentos incompleta.';
 
 type ProfileRow = {
   id: string;
@@ -25,23 +25,31 @@ type ProfileRow = {
 export async function POST(request: Request) {
   console.log('[stripe env check]', getStripeEnvStatus());
 
-  const stripe = getStripe();
   const priceId = getStripePriceId();
   const appUrl = getConfiguredAppUrl();
+  const missingConfig = getMissingCheckoutConfig();
+
+  if (missingConfig.length > 0) {
+    console.error('[stripe checkout] missing payment config', missingConfig);
+    return NextResponse.json(
+      {
+        error: `${PAYMENTS_CONFIG_INCOMPLETE} Variáveis ausentes: ${missingConfig.join(', ')}.`,
+        missing: missingConfig,
+      },
+      { status: 503 },
+    );
+  }
+
+  if (!priceId || !appUrl) {
+    console.error('[stripe checkout] payment config validation mismatch');
+    return NextResponse.json({ error: PAYMENTS_CONFIG_INCOMPLETE }, { status: 503 });
+  }
+
+  const stripe = getStripe();
 
   if (!stripe) {
-    console.error('[stripe checkout] missing STRIPE_SECRET_KEY');
-    return NextResponse.json({ error: 'Stripe não configurado.' }, { status: 500 });
-  }
-
-  if (!priceId) {
-    console.error('[stripe checkout] missing NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY');
-    return NextResponse.json({ error: PAYMENTS_NOT_CONFIGURED }, { status: 503 });
-  }
-
-  if (!appUrl) {
-    console.error('[stripe checkout] missing NEXT_PUBLIC_APP_URL');
-    return NextResponse.json({ error: PAYMENTS_NOT_CONFIGURED }, { status: 503 });
+    console.error('[stripe checkout] failed to initialize Stripe client');
+    return NextResponse.json({ error: PAYMENTS_CONFIG_INCOMPLETE }, { status: 503 });
   }
 
   const admin = getSupabaseAdmin();
@@ -162,6 +170,18 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ url: session.url });
+}
+
+function getMissingCheckoutConfig(): string[] {
+  const missing: string[] = [];
+
+  if (!process.env.STRIPE_SECRET_KEY?.trim()) missing.push('STRIPE_SECRET_KEY');
+  if (!process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY?.trim()) {
+    missing.push('NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY');
+  }
+  if (!process.env.NEXT_PUBLIC_APP_URL?.trim()) missing.push('NEXT_PUBLIC_APP_URL');
+
+  return missing;
 }
 
 function getBearerToken(request: Request): string | null {

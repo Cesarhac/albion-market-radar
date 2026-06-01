@@ -24,6 +24,8 @@ import type { SubscriptionStatus } from '@/types/albion';
 
 export const PRO_PRICE_LABEL = 'R$14,99/mês';
 const PARTNER_COUPON_PRICE_LABEL = 'R$9,99';
+const PAYMENTS_CONFIG_INCOMPLETE = 'Configuração de pagamentos incompleta.';
+const STRIPE_CONFIG_ERROR_PATTERN = /stripe.*configurado/i;
 
 const proBenefits = [
   { label: 'Radar de Oportunidades exclusivo', icon: Zap },
@@ -67,6 +69,7 @@ export default function ProPage() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const isPro = isUserPro(user);
+  const isStripeConfigured = Boolean(process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY);
   const isPastDue = user?.subscriptionStatus === 'past_due';
   const isCancelingAtPeriodEnd = user?.subscriptionCancelAtPeriodEnd === true;
   const cancelAt = user?.subscriptionCancelAt ?? user?.subscriptionCurrentPeriodEnd;
@@ -139,12 +142,12 @@ export default function ProPage() {
 
       if (!response.ok || !payload?.url) {
         if (payload?.action === 'customer_portal') {
-          setMessage(payload.error ?? 'Você já possui uma assinatura ativa.');
+          setMessage(getPaymentErrorMessage(payload.error, 'Você já possui uma assinatura ativa.'));
           setShowPortalCta(Boolean(user?.stripeCustomerId));
           return;
         }
 
-        setMessage(payload?.error ?? 'Não foi possível abrir o checkout. Tente novamente.');
+        setMessage(getPaymentErrorMessage(payload?.error, 'Não foi possível abrir o checkout. Tente novamente.'));
         return;
       }
 
@@ -177,7 +180,7 @@ export default function ProPage() {
       const payload = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
 
       if (!response.ok || !payload?.url) {
-        setMessage(payload?.error ?? 'Não foi possível abrir o portal da assinatura.');
+        setMessage(getPaymentErrorMessage(payload?.error, 'Não foi possível abrir o portal da assinatura.'));
         return;
       }
 
@@ -190,7 +193,11 @@ export default function ProPage() {
   };
 
   return (
-    <div className="space-y-5" data-pro-price-label={PRO_PRICE_LABEL}>
+    <div
+      className="space-y-5"
+      data-pro-price-label={PRO_PRICE_LABEL}
+      data-stripe-configured={isStripeConfigured ? 'true' : 'false'}
+    >
       {checkoutNotice === 'success' ? (
         <Notice tone="success" message="Pagamento concluído. Seu PRO será ativado em instantes." />
       ) : null}
@@ -353,6 +360,13 @@ function FreeSubscriptionPanel({
       ) : null}
     </>
   );
+}
+
+function getPaymentErrorMessage(error: string | undefined, fallback: string): string {
+  if (!error) return fallback;
+  if (STRIPE_CONFIG_ERROR_PATTERN.test(error)) return PAYMENTS_CONFIG_INCOMPLETE;
+
+  return error;
 }
 
 function ProSubscriptionPanel({

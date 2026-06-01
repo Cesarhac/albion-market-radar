@@ -6,15 +6,15 @@ let stripeClient: Stripe | null = null;
 
 export function getStripeEnvStatus() {
   return {
-    hasStripeSecretKey: Boolean(process.env.STRIPE_SECRET_KEY),
-    hasStripePrice: Boolean(process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY),
-    hasAppUrl: Boolean(process.env.NEXT_PUBLIC_APP_URL),
-    hasWebhookSecret: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
+    hasStripeSecretKey: Boolean(process.env.STRIPE_SECRET_KEY?.trim()),
+    hasStripePrice: Boolean(getStripePriceId()),
+    hasAppUrl: Boolean(getConfiguredAppUrl()),
+    hasWebhookSecret: Boolean(process.env.STRIPE_WEBHOOK_SECRET?.trim()),
   };
 }
 
 export function getStripe() {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
 
   if (!secretKey) return null;
 
@@ -26,11 +26,11 @@ export function getStripe() {
 }
 
 export function getStripePriceId() {
-  return process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY || null;
+  return process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY?.trim() || null;
 }
 
 export function getConfiguredAppUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || null;
+  return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '') || null;
 }
 
 export function getAppUrl(request?: Request) {
