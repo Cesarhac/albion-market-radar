@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useAlerts } from '@/context/AlertsContext';
 import { useAuth } from '@/context/AuthContext';
+import { APP_NAME } from '@/lib/branding';
 import { cn } from '@/lib/utils';
 import { isActiveProProfile } from '@/src/lib/entitlements';
 
@@ -76,14 +77,14 @@ export function Sidebar() {
         )}
       >
         <div className="border-b border-border-subtle p-5">
-          <Link href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3" aria-label={APP_NAME}>
             <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand-primary text-bg-dark shadow-[0_0_24px_rgba(250,204,21,0.24)]">
               <Radar size={24} />
             </span>
             <span>
               <span className="block text-lg font-black leading-tight text-white">Albion Market</span>
               <span className="block text-[11px] font-bold uppercase tracking-[0.22em] text-brand-primary">
-                Radar
+                Vault
               </span>
             </span>
           </Link>

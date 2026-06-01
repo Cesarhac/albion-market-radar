@@ -25,6 +25,7 @@ import { RelativeTime } from '@/components/ui/RelativeTime';
 import { StatCard } from '@/components/ui/StatCard';
 import { ENCHANTMENTS, MARKET_SERVER_REGIONS, TIERS } from '@/data/constants';
 import { mockOpportunities } from '@/data/mockOpportunities';
+import { APP_NAME } from '@/lib/branding';
 import type { Enchantment, ServerRegion, Tier } from '@/types/albion';
 import {
   cn,
@@ -78,7 +79,7 @@ export default function PainelPage() {
 
             <div className="space-y-4">
               <h1 className="max-w-3xl text-4xl font-black tracking-tight text-white md:text-6xl">
-                Albion Market Radar
+                {APP_NAME}
               </h1>
               <p className="max-w-2xl text-base leading-relaxed text-zinc-300 md:text-lg">
                 O radar BR para buscar preços, encontrar oportunidades e montar seu regear gastando menos.

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/context/AuthContext';
+import { APP_NAME, APP_PRO_NAME } from '@/lib/branding';
 import { cn } from '@/lib/utils';
 import { isUserPro } from '@/src/lib/entitlements';
 import { getBrowserSupabase } from '@/src/lib/supabase/client';
@@ -213,15 +214,15 @@ export default function ProPage() {
               <Crown size={13} />
               {isPro ? 'PRO ativo' : 'PRO mensal'}
             </Badge>
-            <h1 className="mt-3 text-3xl font-black text-white md:text-4xl">Albion Market Radar PRO</h1>
+            <h1 className="mt-3 text-3xl font-black text-white md:text-4xl">{APP_PRO_NAME}</h1>
             <p className="mt-2 max-w-3xl text-base font-bold text-zinc-200">
               Radar de Oportunidades, Alertas de Preço e ferramentas avançadas para traders.
             </p>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-400">
-              O PRO libera ferramentas de análise e organização. O Albion Market Radar não vende prata, itens, contas ou vantagens dentro do jogo.
+              O PRO libera ferramentas de análise e organização. O {APP_NAME} não vende prata, itens, contas ou vantagens dentro do jogo.
             </p>
             <p className="mt-3 max-w-3xl rounded-lg border border-brand-primary/25 bg-brand-primary/10 px-3 py-2 text-sm font-bold text-brand-primary">
-              Use um cupom de parceiro no checkout para pagar {PARTNER_COUPON_PRICE_LABEL} no período promocional.
+              Com cupom de parceiro, o valor promocional fica {PARTNER_COUPON_PRICE_LABEL} no período configurado.
             </p>
           </div>
 
@@ -264,7 +265,7 @@ export default function ProPage() {
             <p className="mt-1 text-sm text-zinc-400">
               {isPro
                 ? 'Recursos disponíveis na sua conta.'
-                : `Assine por ${PRO_PRICE_LABEL}. Com cupom de parceiro, o checkout aplica R$5,00 de desconto.`}
+                : `Assine por ${PRO_PRICE_LABEL}. Com cupom de parceiro, o valor promocional fica ${PARTNER_COUPON_PRICE_LABEL} no período configurado.`}
             </p>
           </div>
           {isPro ? <Badge variant="success">Você está no PRO</Badge> : <Badge variant="primary">{PRO_PRICE_LABEL}</Badge>}
@@ -338,7 +339,7 @@ function FreeSubscriptionPanel({
       <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500">Plano PRO</p>
       <p className="mt-1 text-3xl font-black text-white">{PRO_PRICE_LABEL}</p>
       <p className="mt-1 text-xs text-zinc-500">
-        Assinatura mensal recorrente via Stripe. Cupom de parceiro reduz o valor promocional para R$9,99.
+        Assinatura mensal recorrente via Stripe. Com cupom de parceiro, o valor promocional fica {PARTNER_COUPON_PRICE_LABEL} no período configurado.
       </p>
       <button
         type="button"

@@ -5,23 +5,22 @@ import { Sidebar } from '@/components/Sidebar';
 import { AlertsProvider } from '@/context/AlertsContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { UserSettingsProvider } from '@/context/UserSettingsContext';
+import { APP_DESCRIPTION, APP_NAME, APP_TITLE_TEMPLATE } from '@/lib/branding';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Albion Market Radar',
-    template: '%s | Albion Market Radar',
+    default: APP_NAME,
+    template: APP_TITLE_TEMPLATE,
   },
-  description:
-    'Busque preços, encontre oportunidades e monte seu regear gastando menos no mercado de Albion Online.',
-  applicationName: 'Albion Market Radar',
+  description: APP_DESCRIPTION,
+  applicationName: APP_NAME,
   icons: {
     icon: '/icon.svg',
   },
   openGraph: {
-    title: 'Albion Market Radar',
-    description:
-      'Radar BR para buscar preços, encontrar oportunidades e montar seu regear gastando menos em Albion Online.',
+    title: APP_NAME,
+    description: APP_DESCRIPTION,
     type: 'website',
   },
 };

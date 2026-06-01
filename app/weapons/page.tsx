@@ -43,6 +43,7 @@ import {
   createWeapon4Listing,
   updateWeapon4Listing,
 } from '@/lib/weapons4Storage';
+import { APP_NAME } from '@/lib/branding';
 import { formatEntitlementLimit, getUserEntitlements } from '@/src/lib/entitlements';
 import {
   createWeaponListingInSupabase,
@@ -1566,7 +1567,7 @@ function WeaponFormModal({
               <div>
                 <h3 className="font-black text-white">Aviso de segurança</h3>
                 <p className="mt-2 text-sm leading-relaxed text-status-warning">
-                  O Albion Market Radar apenas divulga anúncios criados por jogadores. O site não
+                  O {APP_NAME} apenas divulga anúncios criados por jogadores. O site não
                   intermedia negociações, pagamentos, trocas, entregas de itens ou transferência de
                   prata. Toda negociação é feita por conta e risco dos jogadores envolvidos.
                 </p>
@@ -1581,7 +1582,7 @@ function WeaponFormModal({
                 className="mt-1 h-4 w-4 accent-status-warning"
               />
               <span className="text-sm font-bold leading-relaxed text-zinc-200">
-                Entendo que o Albion Market Radar não é responsável por golpes, fraudes, perdas de
+                Entendo que o {APP_NAME} não é responsável por golpes, fraudes, perdas de
                 itens, perdas de prata ou negociações realizadas fora do site.
               </span>
             </label>
@@ -1667,7 +1668,7 @@ function WeaponDetailsModal({
               Segurança da negociação
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-status-warning">
-              O Albion Market Radar não participa da negociação e não garante entrega, pagamento,
+              O {APP_NAME} não participa da negociação e não garante entrega, pagamento,
               preço ou autenticidade do anúncio. Confirme os dados dentro do jogo antes de negociar.
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -1983,7 +1984,7 @@ function MarketplaceResponsibilityNotice() {
         Responsabilidade nas negociações
       </h2>
       <p className="mt-3">
-        O Albion Market Radar apenas fornece ferramentas, dados e divulgação de anúncios. O site não
+        O {APP_NAME} apenas fornece ferramentas, dados e divulgação de anúncios. O site não
         vende prata, não vende itens por dinheiro real, não vende contas, não intermedia pagamentos
         e não garante negociações entre jogadores.
       </p>
@@ -2001,7 +2002,7 @@ function SecurityNotice() {
       <div className="flex items-start gap-3">
         <ShieldAlert className="mt-0.5 shrink-0" size={19} />
         <p>
-          O Albion Market Radar não intermedia pagamentos, não vende prata e não participa de negociações por dinheiro real.
+          O {APP_NAME} não intermedia pagamentos, não vende prata e não participa de negociações por dinheiro real.
           Os anúncios são informativos e devem seguir as regras do jogo.
         </p>
       </div>

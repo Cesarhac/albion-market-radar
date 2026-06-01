@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, LogIn, ShieldAlert, Sword } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/context/AuthContext';
+import { APP_NAME } from '@/lib/branding';
 
 type LoginFormState = {
   email: string;
@@ -59,7 +60,7 @@ function LoginContent() {
         <section className="rounded-lg border border-border-subtle bg-[radial-gradient(circle_at_24%_10%,rgba(250,204,21,0.18),transparent_34%),linear-gradient(135deg,#18181b_0%,#09090b_82%)] p-6 shadow-2xl">
           <Badge variant="primary" className="gap-2">
             <Sword size={13} />
-            Albion Market Radar
+            {APP_NAME}
           </Badge>
           <h1 className="mt-4 text-3xl font-black text-white md:text-5xl">Entrar</h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-400 md:text-base">
@@ -70,25 +71,25 @@ function LoginContent() {
             <div className="flex gap-3">
               <ShieldAlert className="mt-0.5 shrink-0" size={19} />
               <p>
-                Nunca use a mesma senha da sua conta do Albion. Esta conta serve apenas para acessar suas ferramentas no Albion Market Radar.
+                Nunca use a mesma senha da sua conta do Albion. Esta conta serve apenas para acessar suas ferramentas no {APP_NAME}.
               </p>
             </div>
           </div>
 
           <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-            Login com Supabase Auth. O Albion Market Radar não pede e nunca deve receber a senha da sua conta do Albion.
+            Login com Supabase Auth. O {APP_NAME} não pede e nunca deve receber a senha da sua conta do Albion.
           </p>
         </section>
 
         <form onSubmit={handleSubmit} className="rounded-lg border border-border-subtle bg-bg-card p-6 shadow-2xl">
           <div>
             <h2 className="text-xl font-black text-white">Login</h2>
-            <p className="mt-1 text-sm text-zinc-500">Use sua conta do Albion Market Radar.</p>
+            <p className="mt-1 text-sm text-zinc-500">Use sua conta do {APP_NAME}.</p>
           </div>
 
           {authRequired ? (
             <div className="mt-5 rounded-lg border border-brand-primary/25 bg-brand-primary/10 p-4 text-sm font-bold text-brand-primary">
-              Entre para usar as ferramentas do Albion Market Radar.
+              Entre para usar as ferramentas do {APP_NAME}.
             </div>
           ) : null}
 

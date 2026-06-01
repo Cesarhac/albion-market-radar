@@ -29,6 +29,7 @@ import {
   findCatalogItemsByQuery,
   getDisplayItemName as getCatalogDisplayItemName,
 } from '@/data/itemCatalog';
+import { APP_NAME } from '@/lib/branding';
 import { serverParamToRegion } from '@/lib/settingsStorage';
 import { cn, formatCityName, formatServerName, formatSilver } from '@/lib/utils';
 import { formatEntitlementLimit, getUserEntitlements } from '@/src/lib/entitlements';
@@ -741,7 +742,7 @@ function AlertExplanation({ isPro }: { isPro: boolean }) {
         Como os alertas funcionam?
       </summary>
       <p className="mt-3 max-w-4xl text-sm leading-relaxed text-zinc-300">
-        Os alertas verificam os preços enquanto você está com o site aberto. Quando um item atinge o preço alvo definido, o Albion Market Radar mostra um aviso dentro do site e, se você permitir, também envia uma notificação do navegador.
+        Os alertas verificam os preços enquanto você está com o site aberto. Quando um item atinge o preço alvo definido, o {APP_NAME} mostra um aviso dentro do site e, se você permitir, também envia uma notificação do navegador.
       </p>
       <ul className="mt-3 grid gap-2 text-sm text-zinc-400 md:grid-cols-2">
         <li>O alerta é privado e só aparece para você.</li>

@@ -4,6 +4,7 @@ import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { APP_NAME } from '@/lib/branding';
 
 const PUBLIC_PATHS = new Set([
   '/',
@@ -49,7 +50,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (needsAuth && !isAuthenticated) {
-    return <AuthLoading message="Entre para usar as ferramentas do Albion Market Radar." />;
+    return <AuthLoading message={`Entre para usar as ferramentas do ${APP_NAME}.`} />;
   }
 
   return children;

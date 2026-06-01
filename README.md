@@ -1,6 +1,6 @@
-# Albion Market Radar
+# Albion Market Vault
 
-Albion Market Radar é uma aplicação em **Next.js App Router**, **TypeScript**, **Tailwind CSS**, **Supabase Auth/Postgres/RLS** e **Stripe** para jogadores de Albion Online buscarem preços, encontrarem oportunidades, controlarem carteira de trader, anunciarem Armas .4 e configurarem Alertas de Preço.
+Albion Market Vault é uma aplicação em **Next.js App Router**, **TypeScript**, **Tailwind CSS**, **Supabase Auth/Postgres/RLS** e **Stripe** para jogadores de Albion Online buscarem preços, encontrarem oportunidades, controlarem carteira de trader, anunciarem Armas .4 e configurarem Alertas de Preço.
 
 O site não vende prata, itens, contas ou vantagens dentro do jogo. As ferramentas apenas organizam dados públicos e anúncios informativos para negociação direta entre jogadores.
 
@@ -32,7 +32,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ## Stripe Local
 
 1. Crie um produto no Stripe em modo teste.
-2. Crie o preço recorrente mensal **R$ 10,00**.
+2. Crie o preço recorrente mensal **R$ 14,99**.
 3. Copie o `price_...` para `NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY`.
 4. Configure `STRIPE_SECRET_KEY`.
 5. Rode:
@@ -146,7 +146,9 @@ As rotas `/api` são Route Handlers do Next.js e são publicadas pela Netlify co
 
 ## Plano PRO
 
-PRO mensal: **R$ 10/mês** via assinatura recorrente Stripe Checkout.
+PRO mensal: **R$ 14,99/mês** via assinatura recorrente Stripe Checkout.
+
+Com cupom de parceiro, o valor promocional fica **R$ 9,99** no período configurado.
 
 Recursos PRO:
 

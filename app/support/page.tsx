@@ -1,8 +1,9 @@
 import { ArrowRight, Bug, LifeBuoy, Lightbulb, Mail, MessageSquare } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { APP_NAME } from '@/lib/branding';
 
 const supportEmail = 'cesar018_@outlook.com';
-const suggestionMailto = 'mailto:cesar018_@outlook.com?subject=Sugestão%20-%20Albion%20Market%20Radar';
+const suggestionMailto = `mailto:cesar018_@outlook.com?subject=${encodeURIComponent(`Sugestão - ${APP_NAME}`)}`;
 
 const supportOptions = [
   {
@@ -32,7 +33,7 @@ export default function SupportPage() {
         </Badge>
         <h1 className="mt-3 text-3xl font-black text-white md:text-5xl">Sugestões e Suporte</h1>
         <p className="mt-3 max-w-3xl text-base font-bold leading-relaxed text-zinc-200">
-          Sugestões, bugs e dúvidas podem ser enviados por e-mail para o Albion Market Radar.
+          Sugestões, bugs e dúvidas podem ser enviados por e-mail para o {APP_NAME}.
         </p>
         <p className="mt-3 max-w-3xl text-sm leading-relaxed text-zinc-400 md:text-base">
           Use o endereço abaixo para compartilhar melhorias, pedir ajuda ou avisar sobre algo que não funcionou como esperado.
